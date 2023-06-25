@@ -567,9 +567,6 @@ def ue_get_gpu_cpu_stats(nametag, stats_type, operation, verbose):
        Average memory usage (MB)
        Peak memory usage (MB)
     """
-    if operation not in [VALID_READ_OPERATIONS]:
-        print(f"ue_get_gpu_cpu_stats: invalid operation '{operation}'")
-        return
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         os.makedirs(UE_STATS_STORE_DIRECTORY)
     if stats_type == UE_CPU_STATS:
