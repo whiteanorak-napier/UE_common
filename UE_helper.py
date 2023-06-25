@@ -582,6 +582,11 @@ def ue_get_gpu_cpu_stats(nametag, stats_type, operation, verbose):
     # Filter out stats not of the requested mode.
     df_stats = df_stats[df_stats['mode'] == operation]
     count = len(df_stats)
+
+    # Prevent divide by zero error on failure.
+    if count == 0:
+        return 0, 0, 0
+
     # The processor % is the % of CPU/GPU time used in the last STATS_INTERVAL seconds.
     # The number of seconds of CPU time in this interval is calculated as below
     cumulative_processor_seconds = (int(df_stats['processor%'].sum()) * UE_STATS_INTERVAL_SECS) / 100
