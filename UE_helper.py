@@ -147,9 +147,16 @@ class UEHelper(object):
             self.unlearn_time = datetime.utcnow() - self.unlearn_start
             self.unlearn_start = None
         elif keyword == UE_KEY_UNLEARN_LOSS_SCORE:
-            if not isinstance(value, float):
-                print(f"Loss score must be a float. Got '{value}")
-                return
+            if isinstance(value, str):
+                try:
+                    value = float(value)
+                except Exception as e:
+                    print(f"Loss score must be a float. Got '{value}'")
+                    return
+            else:
+                if not isinstance(value, float):
+                    print(f"Loss score must be a float. Got '{value}'")
+                    return
             self.unlearn_loss_score = value
         else:
             print(f"Unknown keyword {keyword}")
