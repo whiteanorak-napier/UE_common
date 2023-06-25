@@ -74,8 +74,9 @@ class UEHelper(object):
     CUDA_STATE_GPU = 'cuda'
     VALID_CUDA_STATES = [CUDA_STATE_CPU, CUDA_STATE_GPU]
 
-    def __init__(self, title):
+    def __init__(self, title, nametag):
         self.title = title
+        self.nametag = nametag
         self.cuda_status = 'cpu'
         self.dataset = None
 
@@ -91,6 +92,9 @@ class UEHelper(object):
         self.unlearn_loss_score = 0.0
         self.unlearn_start = None
         self.unlearn_time = None
+
+    def get_nametag(self):
+        return self.nametag
 
     def set_ue_value(self, keyword, value):
         if keyword == UE_KEY_CUDA:
@@ -122,16 +126,6 @@ class UEHelper(object):
             self.training_time = datetime.utcnow() - self.training_start
             self.training_start = None
         elif keyword == UE_KEY_TRAINING_LOSS_SCORE:
-            if isinstance(value, str):
-                try:
-                    value = float(value)
-                except Exception as e:
-                    print(f"Loss score must be a float. Got '{value}'")
-                    return
-            else:
-                if not isinstance(value, float):
-                    print(f"Loss score must be a float. Got '{value}'")
-                    return
             self.training_loss_score = value
         elif keyword == UE_KEY_UNLEARN_DATA_SIZE:
             if not isinstance(value, int):
@@ -147,16 +141,6 @@ class UEHelper(object):
             self.unlearn_time = datetime.utcnow() - self.unlearn_start
             self.unlearn_start = None
         elif keyword == UE_KEY_UNLEARN_LOSS_SCORE:
-            if isinstance(value, str):
-                try:
-                    value = float(value)
-                except Exception as e:
-                    print(f"Loss score must be a float. Got '{value}'")
-                    return
-            else:
-                if not isinstance(value, float):
-                    print(f"Loss score must be a float. Got '{value}'")
-                    return
             self.unlearn_loss_score = value
         else:
             print(f"Unknown keyword {keyword}")
@@ -456,14 +440,14 @@ def ue_set_stats_type(nametag, mode=UE_TRAIN_MODEL, verbose=False):
         return
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         os.mkdir(UE_STATS_STORE_DIRECTORY)
-    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"{nametag}-mode.dat"
+    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{nametag}-{mode}.dat"
     with open(UE_STATS_MODE_FILE, 'w') as mode_file:
         mode_file.write(mode)
     if verbose:
         print(f"Stats mode updated to '{mode}'")
 
 
-def ue_get_stats_type(nametag, verbose=False):
+def ue_get_stats_mode(nametag, verbose=False):
     """
     Gets the current mode for the stats updates for the nametag
     Args:
@@ -472,15 +456,18 @@ def ue_get_stats_type(nametag, verbose=False):
     Return:
         (string): current mode.
     """
+    # Assuming training
     mode = UE_TRAIN_MODEL
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         ue_set_stats_type(nametag, mode=mode)
     else:
-        UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"{nametag}-mode.dat"
-        with open(UE_STATS_MODE_FILE, 'r') as mode_file:
+        ue_stats_mode_file = UE_STATS_STORE_DIRECTORY + f"/{nametag}-{mode}.dat"
+        if not os.path.exists(ue_stats_mode_file):
+            return mode
+        with open(ue_stats_mode_file, 'r') as mode_file:
             mode = mode_file.readline()
     if mode not in UE_VALID_MODES:
-        print(f"ue_get_stats_type: read bad mode {mode}")
+        print(f"ue_get_stats_mode read bad mode {mode}")
         sys.exit(1)
     if verbose:
         print(f"Stats mode is '{mode}'")
@@ -522,7 +509,7 @@ def ue_get_and_store_gpu_stats(nametag, interval, verbose):
         else:
             if not os.path.exists(UE_STATS_STORE_DIRECTORY):
                 os.mkdir(UE_STATS_STORE_DIRECTORY)
-            mode = ue_get_stats_type(nametag, verbose)
+            mode = ue_get_stats_mode(nametag, verbose)
             filename = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_gpu.csv"
             output_line = f"{mode},{gpu_stats.decode('utf-8').replace(', ', ',').replace(' %', '').replace(' MiB', '')}"
             with open(filename, 'a') as stats:
@@ -558,7 +545,7 @@ def ue_get_and_store_system_stats(nametag, interval, verbose):
         memory_percent = memory[2]
         if not os.path.exists(UE_STATS_STORE_DIRECTORY):
             os.mkdir(UE_STATS_STORE_DIRECTORY)
-        mode = ue_get_stats_type(nametag, verbose)
+        mode = ue_get_stats_mode(nametag, verbose)
         filename = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_cpu.csv"
         output_line = f"{mode},{timestamp},{cpu_pct},{memory_percent}\n"
         with open(filename, 'a') as stats:
