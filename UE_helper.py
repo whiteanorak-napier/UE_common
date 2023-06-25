@@ -427,7 +427,7 @@ def ue_log_error(message):
     """
     print(f"{UE_ERROR_LOGGER}={str(message)}")
 
-def ue_set_stats_type(nametag, mode=UE_TRAIN_MODEL, verbose=False):
+def ue_set_stats_mode(nametag, mode=UE_TRAIN_MODEL, verbose=False):
     """
     Sets the mode for the stats updates for the nametag
     Args:
@@ -435,12 +435,9 @@ def ue_set_stats_type(nametag, mode=UE_TRAIN_MODEL, verbose=False):
         mode (string): train or unlearn mode
         verbose (bool): verbose mode.
     """
-    if mode not in UE_VALID_MODES:
-        print(f"ue_set_stats_type: Bad mode {mode}")
-        return
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         os.mkdir(UE_STATS_STORE_DIRECTORY)
-    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{nametag}-{mode}.dat"
+    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{nametag}-mode.dat"
     with open(UE_STATS_MODE_FILE, 'w') as mode_file:
         mode_file.write(mode)
     if verbose:
@@ -461,7 +458,7 @@ def ue_get_stats_mode(nametag, verbose=False):
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         ue_set_stats_type(nametag, mode=mode)
     else:
-        ue_stats_mode_file = UE_STATS_STORE_DIRECTORY + f"/{nametag}-{mode}.dat"
+        ue_stats_mode_file = UE_STATS_STORE_DIRECTORY + f"/{nametag}-mode.dat"
         if not os.path.exists(ue_stats_mode_file):
             return mode
         with open(ue_stats_mode_file, 'r') as mode_file:
