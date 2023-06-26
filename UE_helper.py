@@ -644,7 +644,7 @@ def ue_start_training(UE, train_size, test_size, verbose=False):
     """
     UE.set_ue_value(UE_KEY_TRAINING_DATA_SIZE, train_size)
     UE.set_ue_value(UE_KEY_TEST_DATA_SIZE, test_size)
-    ue_set_stats_mode_train(UE.get_nametag(), verbose=verbose)
+    ue_set_stats_mode_train(UE, verbose=verbose)
     UE.set_ue_value(UE_KEY_TRAINING_START, None)
     if verbose:
         print(f"{UE.get_nametag()} train_size: {train_size}, test_size: {test_size}, stats_mode: {stats_mode}")
