@@ -146,11 +146,11 @@ class UEHelper(object):
             print(f"Unknown keyword {keyword}")
         return
 
-    def start_training_timer(self):
-        self.training_start = datetime.utcnow()#
+    def get_training_time(self):
+        return self.training_time
 
-    def start_unlearn_timer(self):
-        self.unlearn_start = datetime.utcnow()
+    def get_unlearn_time(self):
+        return self.unlearn_time
 
     def print_ue_training_values(self):
         """
@@ -427,21 +427,35 @@ def ue_log_error(message):
     """
     print(f"{UE_ERROR_LOGGER}={str(message)}")
 
-def ue_set_stats_mode(nametag, mode=UE_TRAIN_MODEL, verbose=False):
+def ue_set_stats_mode_train(UE, verbose=False):
     """
-    Sets the mode for the stats updates for the nametag
+    Sets the mode for the stats updates for the nametag to TRAIN
     Args:
-        nametag (string): name of test run
-        mode (string): train or unlearn mode
+        UE (class): UE instance
         verbose (bool): verbose mode.
     """
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         os.mkdir(UE_STATS_STORE_DIRECTORY)
-    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{nametag}-mode.dat"
+    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{UE.get_nametag()}-mode.dat"
     with open(UE_STATS_MODE_FILE, 'w') as mode_file:
-        mode_file.write(mode)
+        mode_file.write(UE_TRAIN_MODEL)
     if verbose:
-        print(f"Stats mode updated to '{mode}'")
+        print(f"Stats mode updated to '{UE_TRAIN_MODEL}'")
+
+def ue_set_stats_mode_unlearn(UE, verbose=False):
+    """
+    Sets the mode for the stats updates for the nametag to UNLEARN
+    Args:
+        UE (class): UE instance
+        verbose (bool): verbose mode.
+    """
+    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
+        os.mkdir(UE_STATS_STORE_DIRECTORY)
+    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{UE.get_nametag()}-mode.dat"
+    with open(UE_STATS_MODE_FILE, 'w') as mode_file:
+        mode_file.write(UE_UNLEARN_MODEL)
+    if verbose:
+        print(f"Stats mode updated to '{UE_TRAIN_MODEL}'")
 
 
 def ue_get_stats_mode(nametag, verbose=False):
@@ -595,3 +609,91 @@ def ue_get_gpu_cpu_stats(nametag, stats_type, operation, verbose):
     if verbose:
         print(f"get_stats: {nametag}: ")
     return cumulative_processor_seconds, avg_memory_MiB, peak_memory_MiB
+
+
+
+"""
+Main interface methods
+"""
+def ue_setup(title, nametag, cuda, dataset):
+    """
+    Instantiate the Unlearning Effectiveness helper with initial parameters
+    Args:
+        title (string): Friendly name for the class instantiation
+        nametag (string): Tag name for the instantiation. Used for dats storage
+        cuda (torch.device): CUDA status
+        dataset (string): Name of dataset being used for this instantiation
+    Return:
+        (class): Instance of the UDHelper class.
+    """
+    UE = UEHelper(title, nametag)
+    UE.set_ue_value(UE_KEY_CUDA, cuda)
+    UE.set_ue_value(UE_KEY_DATASET, dataset)
+    return UE
+
+def ue_start_training(UE, train_size, test_size, verbose=False):
+    """
+    Start a UE training session
+    Args:
+        UE (class): instance of the UEHelper class
+        train_size (int): Number of items in the training set
+        test_size (int): Number of items in the test set
+        verbose (bool): Verbose mode
+    Returns:
+        -
+    """
+    UE.set_ue_value(UE_KEY_TRAINING_DATA_SIZE, train_size)
+    UE.set_ue_value(UE_KEY_TEST_DATA_SIZE, test_size)
+    ue_set_stats_mode_train(UE.get_nametag(), verbose=verbose)
+    UE.set_ue_value(UE_KEY_TRAINING_START, None)
+    if verbose:
+        print(f"{UE.get_nametag()} train_size: {train_size}, test_size: {test_size}, stats_mode: {stats_mode}")
+
+def ue_stop_training(UE, train_loss_score, verbose=False):
+    """
+    Stop a UE training session
+    Args:
+        UE (class): instance of the UEHelper class
+        train_loss_score (float): training loss score
+        verbose (bool): verbose mode.
+    Returns:
+        -
+    """
+    UE.set_ue_value(UE_KEY_TRAINING_END, None)
+    UE.set_ue_value(UE_KEY_TRAINING_LOSS_SCORE, train_loss_score)
+    if verbose:
+        print(f"{UE.get_nametag()} train_loss_score: {train_loss_score}, "
+              f"total training time: {UE.get_training_time()}")
+
+def ue_start_unlearning(UE, unlearn_data_size,  verbose=False):
+    """
+    Start a UE unlearning session
+    Args:
+        UE (class): instance of the UEHelper class
+        unlearn_data_size (int): Number of items in the unlearning set
+        verbose (bool): Verbose mode
+    Returns:
+        -
+    """
+    UE.set_ue_value(UE_KEY_UNLEARN_DATA_SIZE, unlearn_data_size)
+    ue_set_stats_mode_unlearn(UE, verbose=verbose)
+    UE.set_ue_value(UE_KEY_UNLEARN_START, None)
+    if verbose:
+        print(f"{UE.get_nametag()} unlearn_data_size: {unlearn_data_size}, "
+              f"total unlearning time: {UE.get_unlearn_time()}")
+
+def ue_stop_unlearning(UE, unlearn_accuracy, verbose=False):
+    """
+    Stop a UE training session
+    Args:
+        UE (class): instance of the UEHelper class
+        unlearn_accuracy (float): unlearning accuracy score
+        verbose (bool): verbose mode.
+    Returns:
+        -
+    """
+    UE.set_ue_value(UE_KEY_UNLEARN_END, None)
+    UE.set_ue_value(UE_KEY_UNLEARN_LOSS_SCORE, unlearn_accuracy)
+    if verbose:
+        print(f"{UE.get_nametag()} unlearn_accuracy: {unlearn_accuracy}, "
+              f"total unlearning time: {UE.get_unlearn_time()}")
