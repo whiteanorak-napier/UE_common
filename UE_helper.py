@@ -32,7 +32,10 @@ UE_ERROR_LOGGER = "UE_error_logger"
 UE_TRAIN_MODEL = 'train'
 UE_UNLEARN_MODEL = 'unlearn'
 UE_TRAIN_UNLEARN = 'train_and_unlearn'
-UE_VALID_MODES = [UE_TRAIN_MODEL, UE_UNLEARN_MODEL]
+UE_VALID_MODES = [
+    UE_TRAIN_MODEL,
+    UE_UNLEARN_MODEL
+]
 
 HOME_DIR = os.path.expanduser('~')
 UE_DATA_STORE_DIRECTORY = HOME_DIR + '/unlearning_effectiveness/data'
@@ -40,15 +43,35 @@ UE_MODEL_STORE_DIRECTORY = HOME_DIR + '/unlearning_effectiveness/models'
 UE_STATS_STORE_DIRECTORY = HOME_DIR + '/unlearning_effectiveness/stats'
 
 STOREFILE_SUFFIX = "ue_store.csv"
-UE_ALL_READ = "all"
-VALID_WRITE_OPERATIONS = [UE_TRAIN_MODEL, UE_UNLEARN_MODEL]
-VALID_READ_OPERATIONS = [UE_TRAIN_MODEL, UE_UNLEARN_MODEL, UE_ALL_READ]
+UE_OPERATION_TRAIN = 'train'
+UE_OPERATION_TRAIN_UNLEARN = 'train_unlearn'
+UE_OPERATION_UNLEARN = 'unlearn'
+UE_OPERATION_INFERENCE = 'inference'
+UE_OPERATION_ALL = "train_unlearn_inference"
+UE_VALID_OPERATIONS = [
+    UE_OPERATION_TRAIN,
+    UE_OPERATION_UNLEARN,
+    UE_OPERATION_TRAIN_UNLEARN,
+    UE_OPERATION_INFERENCE,
+    UE_OPERATION_ALL
+]
+
+UE_VALID_WRITE_OPERATIONS = [
+    UE_OPERATION_TRAIN,
+    UE_OPERATION_UNLEARN
+]
+UE_VALID_READ_OPERATIONS = [
+    UE_OPERATION_TRAIN,
+    UE_OPERATION_UNLEARN,
+    UE_OPERATION_ALL]
 
 UE_STATS_INTERVAL_SECS = 5
 UE_GPU_STATS = 'gpu'
 UE_CPU_STATS = 'cpu'
 
 DATETIME_FORMAT = "%Y-%m-%d_%H:%M:%S"
+
+
 
 class UEHelper(object):
     """
@@ -300,8 +323,8 @@ def ue_store_metrics(nametag,
 :return
         -
     """
-    if operation not in VALID_WRITE_OPERATIONS:
-        print(f"store_metrics: invalid operation {operation}, must be one of {VALID_WRITE_OPERATIONS}")
+    if operation not in UE_VALID_WRITE_OPERATIONS:
+        print(f"store_metrics: invalid operation {operation}, must be one of {UE_VALID_WRITE_OPERATIONS}")
         return
     if not os.path.exists(UE_DATA_STORE_DIRECTORY):
         os.makedirs(UE_DATA_STORE_DIRECTORY)
@@ -373,8 +396,8 @@ def ue_display_stats(nametag, requested_operation, display_nametags):
             print(f"    {tag}")
     if requested_operation is None:
         return
-    if requested_operation not in VALID_READ_OPERATIONS:
-        print(f"store_metrics: invalid operation {requested_operation}, must be one of {VALID_READ_OPERATIONS},")
+    if requested_operation not in UE_VALID_READ_OPERATIONS:
+        print(f"store_metrics: invalid operation {requested_operation}, must be one of {UE_VALID_READ_OPERATIONS},")
         return
 
     if len(stored_nametag_list) == 0:
@@ -394,7 +417,7 @@ def ue_display_stats(nametag, requested_operation, display_nametags):
                     if count == 0:
                         header_line = '    ' + ','.join(row)
                     stored_operation = row['operation']
-                    if stored_operation == requested_operation or requested_operation == UE_ALL_READ:
+                    if stored_operation == requested_operation or requested_operation == UE_OPERATION_ALL:
                         output = output + '    ' + ','.join(row.values()) + '\n'
                     count += 1
         print(f"\nFilename: '{filename}':\n{header_line}\n{output}")

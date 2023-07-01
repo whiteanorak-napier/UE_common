@@ -28,6 +28,12 @@ from UE_helper import (
     UE_STATS_INTERVAL_SECS,
     UE_TRAIN_MODEL,
     UE_UNLEARN_MODEL,
+    UE_OPERATION_TRAIN_UNLEARN,
+
+    UE_OPERATION_TRAIN,
+    UE_OPERATION_UNLEARN,
+    UE_OPERATION_INFERENCE,
+    UE_VALID_OPERATIONS,
 
     ue_display_stats,
     ue_get_files_in_directory,
@@ -38,9 +44,7 @@ from UE_helper import (
     ue_store_metrics,
 )
 
-OPERATION_TRAIN = 'train'
-OPERATION_UNLEARN = 'unlearn'
-VALID_OPERATIONS = [OPERATION_TRAIN, OPERATION_UNLEARN]
+
 
 DATETIME_FORMAT = "%Y-%m-%d_%H:%M:%S"
 SHARED_DIR = "/tmp"
@@ -49,44 +53,32 @@ DATASETS = [MNIST, CIFAR10]
 
 BASE_DIRECTORY = os.getcwd()
 EXECUTABLE_PATH = f"{BASE_DIRECTORY}/"
+TRAIN_EXECUTABLE = f""
+UNLEARN_EXECUTABLE = f""
+TRAIN_UNLEARN_EXECUTABLE = f""
+INFERENCE_EXECUTABLE = f""
+EXECUTION_TRAIN = 'train'
+EXECUTION_UNLEARN = 'unlearn'
+EXECUTION_TRAIN_UNLEARN = 'train_unlearn'
+EXECUTION_INFERENCE = 'inference'
 
-execution_comands = {
-    'edge': [
-         "--dataset", "cora",
-         "--std", "0.1",
-         "--train_mode", "ovr",
-         "--prop_step", "2",
-         "--lr", "0.5",
-         "--disp", "100",
-         "--trails", "1",
-         "--compare_retrain",
-         "--optimizer=LBFGS",
-         "--data_dir=../PyG_datasets"
-     ],
-    'feature': [
-        "--dataset", "cora",
-        "--std", "0.1",
-        "--train_mode", "ovr",
-        "--prop_step", "2",
-        "--lr", "0.5",
-        "--disp", "100",
-        "--trails", "1",
-        "--compare_gnorm",
-        "--optimizer=LBFGS",
-        "--data_dir=../PyG_datasets"
-    ],
-    'node': [
-        "--dataset", "cora",
-        "--std", "0.1",
-        "--train_mode", "ovr",
-        "--prop_step", "2",
-        "--lr", "0.5",
-        "--disp", "100",
-        "--trails", "1",
-        "--compare_gnorm",
-        "--optimizer=LBFGS",
-        "--data_dir=../PyG_datasets"
-    ]
+EXECUTION_COMMANDS = {
+    EXECUTION_TRAIN: {
+        'executable': TRAIN_EXECUTABLE,
+        'commands': []
+    },
+    EXECUTION_UNLEARN: {
+        'executable': UNLEARN_EXECUTABLE,
+        'commands': []
+    },
+    EXECUTION_TRAIN_UNLEARN: {
+        'executable': TRAIN_UNLEARN_EXECUTABLE,
+        'commands': []
+    },
+    EXECUTION_INFERENCE: {
+        'executable': INFERENCE_EXECUTABLE,
+        'commands': []
+    }
 }
 
 
@@ -118,8 +110,184 @@ def get_training_data(dataset, data_start, data_count, verbose):
     print(f"{dataset} is not available")
     return None
 
+def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
+    """
+    For use with 3rd party code to train a model
+    Args:
+        nametag (string): tag name for the model
+        epochs (int): Number of epochs to run
+        gpu_collector (thread): To be terminated at end of run
+        cpu_collector (thread): To be terminated at end of run
+        removal_mode (string): one of "feature", "node" or "edge" (3rd part code specific parameter)
+        verbose (bool): Verbose trace
+    :returns:
+        cuda_status (string) True if CUDA is enabled in the target code.
+        dataset (string): Name of dataset being used
+        training_size (int): size of training dataset
+        test_size (int): size of test dataset
+        training_time (string): Time taken to train
+        training_score (float): Loss score after training.
+    """
 
-def train_and_unlearn(nametag, executable_filename, num_removes, removal_mode, gpu_collector, cpu_collector, verbose):
+    # Note that Popen requires each argument to be passed as a separate string in a list.
+    if not os.path.exists(UE_MODEL_STORE_DIRECTORY):
+        os.makedirs(UE_MODEL_STORE_DIRECTORY)
+    existing_models = ue_get_files_in_directory(UE_MODEL_STORE_DIRECTORY)
+    requested_model = f"{nametag}.pt"
+    if requested_model not in existing_models:
+        print(f"Model {requested_model} will be created in {UE_MODEL_STORE_DIRECTORY}")
+    else:
+        print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_TRAIN][EXECUTION_UNLEARN]
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_TRAIN][EXECUTION_COMMANDS]
+    system_command = \
+        ["python3",
+         f"{executable_filename}"] + \
+        executable_params +  \
+        ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
+         "--UE_nametag", f"{nametag}",
+         "--epochs", f"{epochs}"]
+
+    if verbose:
+        print(f"Calling 3rd party training executable using '{system_command}'")
+    process = Popen(system_command, stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    print("Stopping GPU & CPU collectors")
+    gpu_collector.terminate()
+    cpu_collector.terminate()
+    if len(stderr) != 0:
+        ue_print_piped_message(stderr)
+    try:
+        string_stdout = str(stdout)
+        if verbose:
+            print(stdout)
+            # Extract stats from stdout.
+        cuda_status = ue_extract_token_value(string_stdout, UE_KEY_CUDA)
+        dataset = ue_extract_token_value(string_stdout, UE_KEY_DATASET)
+        training_size = ue_extract_token_value(string_stdout, UE_KEY_TRAINING_DATA_SIZE)
+        test_size = ue_extract_token_value(string_stdout, UE_KEY_TEST_DATA_SIZE)
+        training_time = ue_extract_token_value(string_stdout, UE_KEY_TRAINING_TIME)
+        training_score = ue_extract_token_value(string_stdout, UE_KEY_TRAINING_LOSS_SCORE)
+        if verbose:
+            print(f"Training Time = {training_time}, Training Score = {training_score}")
+    except Exception as e:
+        print(f"Unable to gather stats from code execution, error '{e}'")
+        exit(1)
+    num_removes = 0
+    cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_TRAIN_MODEL, verbose)
+    gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_TRAIN_MODEL, verbose)
+    ue_store_metrics(nametag,
+                     UE_TRAIN_MODEL,
+                     cuda_status,
+                     dataset,
+                     epochs,
+                     training_size,
+                     test_size,
+                     num_removes,
+                     training_score,
+                     training_time,
+                     cpu_cumulative_seconds,
+                     cpu_average_memory_MiB,
+                     cpu_peak_memory_MiB,
+                     gpu_cumulative_seconds,
+                     gpu_average_memory_MiB,
+                     gpu_peak_memory_MiB
+                     )
+
+
+def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
+    """
+    For use with 3rd party code to unlearn a model
+    Args:
+        nametag (string): tag name for the model
+        num_removes (int): Number of items to remove
+        gpu_collector (thread): To be terminated at end of run
+        cpu_collector (thread): To be terminated at end of run
+        removal_mode (string): one of "feature", "node" or "edge" (3rd part code specific parameter)
+        verbose (bool): Verbose trace
+    :returns:
+        cuda_status (string) True if CUDA is enabled in the target code.
+        dataset (string): Name of dataset being used
+        training_size (int): size of training dataset
+        test_size (int): size of test dataset
+        training_time (string): Time taken to train
+        training_score (float): Loss score after training.
+    """
+
+    # Note that Popen requires each argument to be passed as a separate string in a list.
+    if not os.path.exists(UE_MODEL_STORE_DIRECTORY):
+        os.makedirs(UE_MODEL_STORE_DIRECTORY)
+    existing_models = ue_get_files_in_directory(UE_MODEL_STORE_DIRECTORY)
+    requested_model = f"{nametag}.pt"
+    if requested_model not in existing_models:
+        print(f"Model {requested_model} will be created in {UE_MODEL_STORE_DIRECTORY}")
+    else:
+        print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][EXECUTION_UNLEARN]
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][EXECUTION_COMMANDS]
+    system_command = \
+        ["python3",
+         f"{executable_filename}"] + \
+        executable_params + \
+        ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
+         "--UE_nametag", f"{nametag}",
+         "--num_removes", f"{num_removes}"]
+
+    if verbose:
+        print(f"Calling 3rd party training executable using '{system_command}'")
+    process = Popen(system_command, stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    print("Stopping GPU & CPU collectors")
+    gpu_collector.terminate()
+    cpu_collector.terminate()
+    if len(stderr) != 0:
+        ue_print_piped_message(stderr)
+    try:
+        string_stdout = str(stdout)
+        if verbose:
+            print(stdout)
+            # Extract stats from stdout.
+        cuda_status = ue_extract_token_value(string_stdout, UE_KEY_CUDA)
+        dataset = ue_extract_token_value(string_stdout, UE_KEY_DATASET)
+        unlearning_size = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_DATA_SIZE)
+        unlearning_time = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_TIME)
+        unlearning_score = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_LOSS_SCORE)
+        if verbose:
+            print(f"Unlearning Time = {unlearning_time}, Unlearning Score = {unlearning_score}")
+
+    except Exception as e:
+        print(f"Unable to gather stats from code execution, error '{e}'")
+        exit(1)
+
+    cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_UNLEARN_MODEL, verbose)
+    gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_UNLEARN_MODEL, verbose)
+    test_size = 0
+    training_size = 0
+
+    ue_store_metrics(nametag,
+                     UE_UNLEARN_MODEL,
+                     cuda_status,
+                     dataset,
+                     num_removes,
+                     training_size,
+                     test_size,
+                     unlearning_size,
+                     unlearning_score,
+                     unlearning_time,
+                     cpu_cumulative_seconds,
+                     cpu_average_memory_MiB,
+                     cpu_peak_memory_MiB,
+                     gpu_cumulative_seconds,
+                     gpu_average_memory_MiB,
+                     gpu_peak_memory_MiB
+                     )
+
+
+def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_collector, verbose):
     """
     For use with 3rd party code where the train and unlearn activities are performed in the same code segment
     Wrapper to train and unlearn
@@ -151,14 +319,15 @@ def train_and_unlearn(nametag, executable_filename, num_removes, removal_mode, g
     else:
         print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
 
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_TRAIN_UNLEARN]['executable']
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_TRAIN_UNLEARN]['commands']
     system_command = \
         ["python3",
-         f"{EXECUTABLE_PATH}/{executable_filename}"] + \
-        execution_comands[removal_mode] +  \
+         f"{executable_filename}"] + \
+        executable_params + \
         ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
-         "--UE_nametag", f"{nametag}"] + \
-        ["--num_removes", f"{num_removes}"] + \
-        [f"--removal_mode={removal_mode}"]
+         "--UE_nametag", f"{nametag}",
+         "--num_removes", f"{num_removes}"]
 
     if verbose:
         print(f"Calling 3rd party executable using '{system_command}'")
@@ -180,44 +349,19 @@ def train_and_unlearn(nametag, executable_filename, num_removes, removal_mode, g
         test_size = ue_extract_token_value(string_stdout, UE_KEY_TEST_DATA_SIZE)
         training_time = ue_extract_token_value(string_stdout, UE_KEY_TRAINING_TIME)
         training_score = ue_extract_token_value(string_stdout, UE_KEY_TRAINING_LOSS_SCORE)
-        # errors = ue_extract_token_value(string_stdout, UE_ERROR_LOGGER)
-        # display_errors(errors)
+        unlearning_size = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_DATA_SIZE)
+        unlearning_time = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_TIME)
+        unlearning_score = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_LOSS_SCORE)
         if verbose:
             print(f"Training Time = {training_time}, Training Score = {training_score}")
     except Exception as e:
         print("Unable to gather stats from code execution")
         exit(1)
-    unlearning_size = 0
+
     cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
         ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_TRAIN_MODEL, verbose)
     gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
         ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_TRAIN_MODEL, verbose)
-    ue_store_metrics(nametag,
-                     UE_TRAIN_MODEL,
-                     cuda_status,
-                     dataset,
-                     num_removes,
-                     training_size,
-                     test_size,
-                     unlearning_size,
-                     training_score,
-                     training_time,
-                     cpu_cumulative_seconds,
-                     cpu_average_memory_MiB,
-                     cpu_peak_memory_MiB,
-                     gpu_cumulative_seconds,
-                     gpu_average_memory_MiB,
-                     gpu_peak_memory_MiB
-                     )
-    cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_UNLEARN_MODEL, verbose)
-    gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_UNLEARN_MODEL, verbose)
-    unlearning_size = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_DATA_SIZE)
-    test_size = 0
-    training_size = 0
-    unlearning_time = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_TIME)
-    unlearning_score = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_LOSS_SCORE)
     ue_store_metrics(nametag,
                      UE_UNLEARN_MODEL,
                      cuda_status,
@@ -235,13 +379,101 @@ def train_and_unlearn(nametag, executable_filename, num_removes, removal_mode, g
                      gpu_average_memory_MiB,
                      gpu_peak_memory_MiB
                      )
-    print("Training complete, terminating the CPU and GPU collectors.")
-    cpu_collector.terminate()
+
+
+def inference(nametag, num_removes, gpu_collector, cpu_collector, verbose):
+    """
+    For use with 3rd party code to infer if data exists in a model.
+    TODO
+    Args:
+        nametag (string): tag name for the model
+        num_removes (int): Number of items to remove
+        gpu_collector (thread): To be terminated at end of run
+        cpu_collector (thread): To be terminated at end of run
+        removal_mode (string): one of "feature", "node" or "edge" (3rd part code specific parameter)
+        verbose (bool): Verbose trace
+    :returns:
+        cuda_status (string) True if CUDA is enabled in the target code.
+        dataset (string): Name of dataset being used
+        training_size (int): size of training dataset
+        test_size (int): size of test dataset
+        training_time (string): Time taken to train
+        training_score (float): Loss score after training.
+    """
+
+    # Note that Popen requires each argument to be passed as a separate string in a list.
+    if not os.path.exists(UE_MODEL_STORE_DIRECTORY):
+        os.makedirs(UE_MODEL_STORE_DIRECTORY)
+    existing_models = ue_get_files_in_directory(UE_MODEL_STORE_DIRECTORY)
+    requested_model = f"{nametag}.pt"
+    if requested_model not in existing_models:
+        print(f"Model {requested_model} will be created in {UE_MODEL_STORE_DIRECTORY}")
+    else:
+        print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][EXECUTION_UNLEARN]
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][EXECUTION_COMMANDS]
+    system_command = \
+        ["python3",
+         f"{executable_filename}"] + \
+        executable_params + \
+        ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
+         "--UE_nametag", f"{nametag}",
+         "--num_removes", f"{num_removes}"]
+
+    if verbose:
+        print(f"Calling 3rd party training executable using '{system_command}'")
+    process = Popen(system_command, stdout=PIPE, stderr=PIPE)
+    stdout, stderr = process.communicate()
+    print("Stopping GPU & CPU collectors")
     gpu_collector.terminate()
-    print("GPU collector stopped")
+    cpu_collector.terminate()
+    if len(stderr) != 0:
+        ue_print_piped_message(stderr)
+    try:
+        string_stdout = str(stdout)
+        if verbose:
+            print(stdout)
+            # Extract stats from stdout.
+        cuda_status = ue_extract_token_value(string_stdout, UE_KEY_CUDA)
+        dataset = ue_extract_token_value(string_stdout, UE_KEY_DATASET)
+        unlearning_size = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_DATA_SIZE)
+        unlearning_time = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_TIME)
+        unlearning_score = ue_extract_token_value(string_stdout, UE_KEY_UNLEARN_LOSS_SCORE)
+        if verbose:
+            print(f"Unlearning Time = {unlearning_time}, Unlearning Score = {unlearning_score}")
+
+    except Exception as e:
+        print(f"Unable to gather stats from code execution, error '{e}'")
+        exit(1)
+
+    cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_UNLEARN_MODEL, verbose)
+    gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_UNLEARN_MODEL, verbose)
+    test_size = 0
+    training_size = 0
+
+    ue_store_metrics(nametag,
+                     UE_UNLEARN_MODEL,
+                     cuda_status,
+                     dataset,
+                     num_removes,
+                     training_size,
+                     test_size,
+                     unlearning_size,
+                     unlearning_score,
+                     unlearning_time,
+                     cpu_cumulative_seconds,
+                     cpu_average_memory_MiB,
+                     cpu_peak_memory_MiB,
+                     gpu_cumulative_seconds,
+                     gpu_average_memory_MiB,
+                     gpu_peak_memory_MiB
+                     )
 
 
-def process_and_gather_stats(operation, nametag, executable_filename, num_removes, removal_mode, verbose):
+
+def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mode, verbose):
     """
     Perform the operation (TRAIN or UNLEARN) using the executable_filename, storing data
     in files named for the nametag. Epochs is used for learning.
@@ -250,7 +482,7 @@ def process_and_gather_stats(operation, nametag, executable_filename, num_remove
     Args:
          operation (string): One of TRAIN or UNLEARN
          nametag (string): tag name for the model
-         executable_filename (string): Name of executable to run to perform the operation.
+         epochs (int): Number of training epochs
          num_removes (int): Number of elements to remove in unlearning
          removal_mode (string): one of "feature", "node" or "edge"
          verbose (bool): Verbose trace
@@ -271,30 +503,43 @@ def process_and_gather_stats(operation, nametag, executable_filename, num_remove
     cpu_collector = \
         multiprocessing.Process(target=ue_get_and_store_system_stats, args=(nametag, UE_STATS_INTERVAL_SECS, False))
     cpu_collector.start()
-    if operation == OPERATION_TRAIN:
+    if operation == UE_OPERATION_TRAIN:
         print("Starting process to train the model")
-        run_task = multiprocessing.Process(target=train_and_unlearn,
+        run_task = multiprocessing.Process(target=train_model,
                                            args=(nametag,
-                                                 executable_filename,
+                                                 epochs,
+                                                 gpu_collector,
+                                                 cpu_collector,
+                                                 verbose))
+    elif operation == UE_OPERATION_UNLEARN:
+        print("Starting process to train the model")
+        run_task = multiprocessing.Process(target=unlearn_model,
+                                           args=(nametag,
                                                  num_removes,
                                                  removal_mode,
                                                  gpu_collector,
                                                  cpu_collector,
                                                  verbose))
-        run_task.start()
-        print("Training Started")
+    elif operation == UE_OPERATION_INFERENCE:
+        print("Starting process to train the model")
+        run_task = multiprocessing.Process(target=inference,
+                                           args=(nametag,
+                                                 num_removes,
+                                                 removal_mode,
+                                                 gpu_collector,
+                                                 cpu_collector,
+                                                 verbose))
     else:
         print(f"Unknown operation {operation}. Exiting")
         sys.exit(1)
-    print(f"Waiting for '{operation}' operation to complete")
+    run_task.start()
     run_task.join()
-    print("Training has completed")
+    print(f"'{operation} has completed")
 
 def main():
     (
         list_datasets,
         operation,
-        executable_filename,
         dataset,
         nametag,
         unlearn,
@@ -310,7 +555,6 @@ def main():
     msg = (
         f"list_datasets:            {list_datasets}\n"
         f"operation:                {operation}\n"
-        f"code_file:                {executable_filename}\n"
         f"dataset:                  {dataset}\n"
         f"nametag:                  {nametag}\n"
         f"unlearn:                  {unlearn}\n"
@@ -328,18 +572,12 @@ def main():
         ue_display_stats(nametag, display_metrics, display_metrics_nametags)
         sys.exit(0)
 
-    if operation not in VALID_OPERATIONS:
-        print("Cannot train and unlearn at the same time")
+    if operation not in UE_VALID_OPERATIONS:
+        print(f"Invalid operation {operation}")
         sys.exit(1)
 
-    if operation == UE_TRAIN_MODEL or operation == UE_UNLEARN_MODEL:
-        if nametag is None:
-            print("\nError - Nametag must be supplied for training")
-            sys.exit(1)
-        process_and_gather_stats(operation, nametag, executable_filename, num_removes, removal_mode, verbose)
-        sys.exit(0)
-    else:
-        print(f"Unknown operation '{operation}'")
+    process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mode, verbose)
+
 
 def check_args(args=None):
 
@@ -357,14 +595,7 @@ def check_args(args=None):
         '-o', '--operation',
         help='Operation to perform. Must be one of train or unlearn.',
         required=False,
-        default=OPERATION_TRAIN,
-    )
-
-    parser.add_argument(
-        '-cf', '--code_file',
-        help='Name of file to run to perform training or unlearning',
-        required=False,
-        default=None
+        default=UE_OPERATION_TRAIN,
     )
 
     parser.add_argument(
@@ -377,7 +608,7 @@ def check_args(args=None):
     parser.add_argument(
         '-tag', '--nametag',
         help='Name or tag of model to train or unlearn from.',
-        required=False,
+        required=True,
         default=None
     )
 
@@ -445,7 +676,6 @@ def check_args(args=None):
     return(
         cmd_line_args.list_datasets,
         cmd_line_args.operation,
-        cmd_line_args.code_file,
         cmd_line_args.dataset,
         cmd_line_args.nametag,
         cmd_line_args.unlearn,
