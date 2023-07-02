@@ -1,6 +1,86 @@
 #!/usr/bin python3
 # -*- coding: utf-8 -*-
 
+"""
+UE_helper module - import into 3rd party code to provide the functionality for generating metrics
+for calculating Unlearning Effectiveness.
+
+Recommended imports for a new code base:
+
+1. Imports:
+
+    from UE_helper import (
+        ue_setup,
+        ue_start_training,
+        ue_stop_training,
+        ue_start_unlearning,
+        ue_stop_unlearning,
+        ue_print_run_stats
+)
+
+2. Additional arguments:
+
+2.1 Mandatory arguments
+
+    parser.add_argument("-ue_sm", '--UE_store_model', default=None, type=str,
+                        help="UE - Save the learnt model to the named file")
+    parser.add_argument("-ue_nt", '--UE_nametag', default=None, type=str,
+                        help="UE - Nametag to use for stats")
+
+2.2 Optional arguments
+    Dependent on 3rd party code - whatever needs to be parameterised.
+
+3. Embedded code:
+
+3.1 Before start of any UE operation - create and initialise UE storage class :
+
+    UE = ue_setup("Description", UE_nametag, device, dataset_name)
+    Args:
+        Description - Free text description of the 3rd party code
+        UE_nametag - tag used to consistently store stats
+        device - CUDA status - cpu or gpu
+        dataset_name - name of dataset - e.g. CIFAR10
+
+    Returns
+        UE - class instance of UE helper storage class
+
+3.2 Before training:
+
+    ue_start_training(UE, training_data_size, test_data_size))
+    Args:
+        UE - UE helper class instance
+        training_data_size - length of training data
+        test_data_size - length of test data
+
+3.3 After training:
+
+     ue_stop_training(UE, training_loss_score)
+     Args:
+         UE - UE helper class instance
+         training_loss_score - loss score after training
+
+3.4 Before unlearning:
+
+    ue_start_unlearning(UE, number_of_items_to_remove)
+    Args:
+        UE - UE helper class instance
+        number_of_items_to_remove - removal count
+
+3.5 After unlearning:
+
+    ue_stop_unlearning(UE, unlearn_loss_score)
+    Args:
+        UE - UE helper class instance
+        unlearn_loss_score - loss score after unlearning
+
+3.6 At end of all train/unlearn/inference activity:
+
+    ue_print_run_stats(UE)
+    Print all UE stats to stdout for collection by wrapper process.
+    Args:
+        UE - UE helper class instance
+"""
+
 import csv
 from datetime import datetime
 import os
@@ -645,7 +725,7 @@ def ue_setup(title, nametag, cuda, dataset):
     Args:
         title (string): Friendly name for the class instantiation
         nametag (string): Tag name for the instantiation. Used for dats storage
-        cuda (torch.device): CUDA status
+        cuda (bool): CUDA status
         dataset (string): Name of dataset being used for this instantiation
     Return:
         (class): Instance of the UDHelper class.
@@ -709,20 +789,20 @@ def ue_start_unlearning(UE, unlearn_data_size,  verbose=False):
         print(f"ue_start_unlearning: {UE.get_nametag()} unlearn_data_size: {unlearn_data_size}, "
               f"total unlearning time: {UE.get_unlearn_time()}")
 
-def ue_stop_unlearning(UE, unlearn_accuracy, verbose=False):
+def ue_stop_unlearning(UE, unlearn_loss_score, verbose=False):
     """
     Stop a UE training session, store the loss score, stop the unlearn timer and store the unlearn time.
     Args:
         UE (class): instance of the UEHelper class
-        unlearn_accuracy (float): unlearning accuracy score
+        unlearn_loss_score (float): unlearning accuracy score
         verbose (bool): verbose mode.
     Returns:
         -
     """
     UE.set_ue_value(UE_KEY_UNLEARN_END, None)
-    UE.set_ue_value(UE_KEY_UNLEARN_LOSS_SCORE, unlearn_accuracy)
+    UE.set_ue_value(UE_KEY_UNLEARN_LOSS_SCORE, unlearn_loss_score)
     if verbose:
-        print(f"ue_stop_unlearning: {UE.get_nametag()} unlearn_accuracy: {unlearn_accuracy}, "
+        print(f"ue_stop_unlearning: {UE.get_nametag()} unlearn_accuracy: {unlearn_loss_score}, "
               f"total unlearning time: {UE.get_unlearn_time()}")
 
 def ue_print_run_stats(UE):

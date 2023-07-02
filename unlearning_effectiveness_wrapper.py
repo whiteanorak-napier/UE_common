@@ -1,6 +1,14 @@
 #!/usr/bin python3
 # -*- coding: utf-8 -*-
 
+"""
+Unlearning Effectiveness wrapper - used to run and generate and store metrics needed to generate a UE score for code.
+Sample parameters
+
+--nametag <run tag> -o train --epochs 1
+
+"""
+
 import argparse
 import sys
 import os
@@ -53,34 +61,44 @@ DATASETS = [MNIST, CIFAR10]
 
 BASE_DIRECTORY = os.getcwd()
 EXECUTABLE_PATH = f"{BASE_DIRECTORY}/"
-TRAIN_EXECUTABLE = f""
-UNLEARN_EXECUTABLE = f""
-TRAIN_UNLEARN_EXECUTABLE = f""
-INFERENCE_EXECUTABLE = f""
+
 EXECUTION_TRAIN = 'train'
 EXECUTION_UNLEARN = 'unlearn'
 EXECUTION_TRAIN_UNLEARN = 'train_unlearn'
 EXECUTION_INFERENCE = 'inference'
+RUN_SCRIPT = 'executable'
+RUN_ARGS = 'args'
+
+
+#############################################################
+# Start of section to be changed for each 3rd party code base
+#############################################################
+TRAIN_EXECUTABLE = f""
+UNLEARN_EXECUTABLE = f""
+TRAIN_UNLEARN_EXECUTABLE = f""
+INFERENCE_EXECUTABLE = f""
 
 EXECUTION_COMMANDS = {
     EXECUTION_TRAIN: {
-        'executable': TRAIN_EXECUTABLE,
-        'commands': []
+        RUN_SCRIPT: TRAIN_EXECUTABLE,
+        RUN_ARGS: []
     },
     EXECUTION_UNLEARN: {
-        'executable': UNLEARN_EXECUTABLE,
-        'commands': []
+        RUN_SCRIPT: UNLEARN_EXECUTABLE,
+        RUN_ARGS: []
     },
     EXECUTION_TRAIN_UNLEARN: {
-        'executable': TRAIN_UNLEARN_EXECUTABLE,
-        'commands': []
+        RUN_SCRIPT: TRAIN_UNLEARN_EXECUTABLE,
+        RUN_ARGS: []
     },
     EXECUTION_INFERENCE: {
-        'executable': INFERENCE_EXECUTABLE,
-        'commands': []
+        RUN_SCRIPT: INFERENCE_EXECUTABLE,
+        RUN_ARGS: []
     }
 }
-
+###########################################################
+# End of section to be changed for each 3rd party code base
+###########################################################
 
 def display_errors(errors):
     for line in errors.split("\n"):
@@ -138,8 +156,8 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
         print(f"Model {requested_model} will be created in {UE_MODEL_STORE_DIRECTORY}")
     else:
         print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
-    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_TRAIN][EXECUTION_UNLEARN]
-    executable_params = EXECUTION_COMMANDS[UE_OPERATION_TRAIN][EXECUTION_COMMANDS]
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_TRAIN][RUN_SCRIPT]
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_TRAIN][RUN_ARGS]
     system_command = \
         ["python3",
          f"{executable_filename}"] + \
@@ -225,8 +243,8 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
         print(f"Model {requested_model} will be created in {UE_MODEL_STORE_DIRECTORY}")
     else:
         print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
-    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][EXECUTION_UNLEARN]
-    executable_params = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][EXECUTION_COMMANDS]
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][RUN_SCRIPT]
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][RUN_ARGS]
     system_command = \
         ["python3",
          f"{executable_filename}"] + \
@@ -319,8 +337,8 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
     else:
         print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
 
-    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_TRAIN_UNLEARN]['executable']
-    executable_params = EXECUTION_COMMANDS[UE_OPERATION_TRAIN_UNLEARN]['commands']
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_TRAIN_UNLEARN][RUN_SCRIPT]
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_TRAIN_UNLEARN][RUN_ARGS]
     system_command = \
         ["python3",
          f"{executable_filename}"] + \
@@ -410,8 +428,8 @@ def inference(nametag, num_removes, gpu_collector, cpu_collector, verbose):
         print(f"Model {requested_model} will be created in {UE_MODEL_STORE_DIRECTORY}")
     else:
         print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
-    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][EXECUTION_UNLEARN]
-    executable_params = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][EXECUTION_COMMANDS]
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][RUN_SCRIPT]
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][RUN_ARGS]
     system_command = \
         ["python3",
          f"{executable_filename}"] + \
