@@ -529,7 +529,7 @@ def ue_log_error(message):
     """
     print(f"{UE_ERROR_LOGGER}={str(message)}")
 
-def ue_set_stats_mode_train(UE, verbose=False):
+def ue_set_stats_mode_train(nametag, verbose=False):
     """
     Sets the mode for the stats updates for the nametag to TRAIN
     Args:
@@ -538,29 +538,29 @@ def ue_set_stats_mode_train(UE, verbose=False):
     """
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         os.mkdir(UE_STATS_STORE_DIRECTORY)
-    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{UE.get_nametag()}-mode.dat"
+    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{nametag}-mode.dat"
     with open(UE_STATS_MODE_FILE, 'w') as mode_file:
         mode_file.write(UE_TRAIN_MODEL)
     if verbose:
         print(f"Stats mode updated to '{UE_TRAIN_MODEL}'")
 
-def ue_set_stats_mode_unlearn(UE, verbose=False):
+def ue_set_stats_mode_unlearn(nametag, verbose=False):
     """
     Sets the mode for the stats updates for the nametag to UNLEARN
     Args:
-        UE (class): UE instance
+        nametag (class): Run nametag
         verbose (bool): verbose mode.
     """
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         os.mkdir(UE_STATS_STORE_DIRECTORY)
-    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{UE.get_nametag()}-mode.dat"
+    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{nametag}-mode.dat"
     with open(UE_STATS_MODE_FILE, 'w') as mode_file:
         mode_file.write(UE_UNLEARN_MODEL)
     if verbose:
         print(f"Stats mode updated to '{UE_TRAIN_MODEL}'")
 
 
-def ue_get_stats_mode(UE, verbose=False):
+def ue_get_stats_mode(nametag, verbose=False):
     """
     Gets the current mode for the stats updates for the current instance. This is gleaned
     from a file in the stats store directory called <nametag>-mode.dat.
@@ -572,7 +572,6 @@ def ue_get_stats_mode(UE, verbose=False):
     """
     # Assuming training
     mode = UE_TRAIN_MODEL
-    nametag = UE.get_nametag()
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         ue_set_stats_mode_train(nametag)
     else:
@@ -597,7 +596,7 @@ def ue_get_and_store_gpu_stats(nametag, interval, verbose):
     This runs as a thread in parallel with a Training/unlearning operation
     gets terminated by the operation when it completes.
     Args:
-        nametag (string):n ame of test run
+        nametag (string): Tag name for run
         interval (int): Number of seconds between readings
         verbose (bool): verbose mode.
     """
@@ -639,7 +638,7 @@ def ue_get_and_store_system_stats(nametag, interval, verbose):
     This runs as a thread in parallel with a Training/unlearning operation
     gets terminated by the operation when it completes.
     Args:
-        nametag (string):
+        nametag (string): nametag for run
         interval (int): Number of seconds between readings
         verbose (bool): verbose mode.
     """
