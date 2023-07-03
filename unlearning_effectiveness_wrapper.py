@@ -3,9 +3,7 @@
 
 """
 Unlearning Effectiveness wrapper - used to run and generate and store metrics needed to generate a UE score for code.
-Sample parameters
 
---nametag <run tag> -o train --epochs 1
 
 """
 
@@ -70,22 +68,27 @@ RUN_SCRIPT = 'executable'
 RUN_ARGS = 'args'
 
 
+"""
+##########################################################
+Start of section to be changed for each 3rd party code base
+TRAIN_SCRIPT - name of training script
+
 #############################################################
-# Start of section to be changed for each 3rd party code base
-#############################################################
-TRAIN_EXECUTABLE = f""
-UNLEARN_EXECUTABLE = f""
+"""
+TRAIN_SCRIPT = f"train_gnn.py"
+UNLEARN_SCRIPT = f"delete_gnn.py"
 TRAIN_UNLEARN_EXECUTABLE = f""
 INFERENCE_EXECUTABLE = f""
 
 EXECUTION_COMMANDS = {
     EXECUTION_TRAIN: {
-        RUN_SCRIPT: TRAIN_EXECUTABLE,
-        RUN_ARGS: []
+        RUN_SCRIPT: TRAIN_SCRIPT,
+        RUN_ARGS: ["--epochs", "1"]
     },
     EXECUTION_UNLEARN: {
-        RUN_SCRIPT: UNLEARN_EXECUTABLE,
-        RUN_ARGS: []
+        RUN_SCRIPT: UNLEARN_SCRIPT,
+        RUN_ARGS: ["--df_size", "100",
+                   "--df", "in"]
     },
     EXECUTION_TRAIN_UNLEARN: {
         RUN_SCRIPT: TRAIN_UNLEARN_EXECUTABLE,
@@ -250,8 +253,7 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
          f"{executable_filename}"] + \
         executable_params + \
         ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
-         "--UE_nametag", f"{nametag}",
-         "--num_removes", f"{num_removes}"]
+         "--UE_nametag", f"{nametag}"]
 
     if verbose:
         print(f"Calling 3rd party training executable using '{system_command}'")
@@ -534,7 +536,6 @@ def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mo
         run_task = multiprocessing.Process(target=unlearn_model,
                                            args=(nametag,
                                                  num_removes,
-                                                 removal_mode,
                                                  gpu_collector,
                                                  cpu_collector,
                                                  verbose))
