@@ -560,9 +560,9 @@ def ue_set_stats_mode_unlearn(UE, verbose=False):
         print(f"Stats mode updated to '{UE_TRAIN_MODEL}'")
 
 
-def ue_get_stats_mode(nametag, verbose=False):
+def ue_get_stats_mode(UE, verbose=False):
     """
-    Gets the current mode for the stats updates for the nametag. This is gleaned
+    Gets the current mode for the stats updates for the current instance. This is gleaned
     from a file in the stats store directory called <nametag>-mode.dat.
     Args:
         nametag (string): name of test run
@@ -572,6 +572,7 @@ def ue_get_stats_mode(nametag, verbose=False):
     """
     # Assuming training
     mode = UE_TRAIN_MODEL
+    nametag = UE.get_nametag()
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
         ue_set_stats_mode_train(nametag)
     else:
