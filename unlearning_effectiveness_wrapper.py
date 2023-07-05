@@ -27,6 +27,7 @@ from UE_helper import (
     UE_KEY_UNLEARN_DATA_SIZE,
     UE_KEY_UNLEARN_TIME,
     UE_KEY_UNLEARN_LOSS_SCORE,
+    UE_KEY_INFERENCE,
 
     UE_MODEL_STORE_DIRECTORY,
     UE_CPU_STATS,
@@ -44,6 +45,8 @@ from UE_helper import (
     ue_display_stats,
     ue_get_files_in_directory,
     ue_get_gpu_cpu_stats,
+    ue_set_stats_mode_unlearn,
+    ue_set_stats_mode_train,
     ue_get_and_store_gpu_stats,
     ue_get_and_store_system_stats,
     ue_print_piped_message,
@@ -357,7 +360,7 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
         executable_params + \
         ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
          "--UE_nametag", f"{nametag}",
-         "--num_removes", f"{num_removes}"]
+         "--num_clusters", f"{num_removes}"]
 
     if verbose:
         print(f"Calling 3rd party executable using '{system_command}'")
@@ -519,7 +522,10 @@ def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mo
         training_time (string): Time taken to train
         training_score (float): Loss score after training.
     """
-
+    if operation in [UE_OPERATION_UNLEARN]:
+        ue_set_stats_mode_unlearn(nametag)
+    else:
+        ue_set_stats_mode_train(nametag)
     print("Starting process to gather GPU stats")
     gpu_collector = \
         multiprocessing.Process(target=ue_get_and_store_gpu_stats, args=(nametag, UE_STATS_INTERVAL_SECS, False))

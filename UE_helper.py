@@ -106,6 +106,7 @@ UE_KEY_UNLEARN_START = "UE_unlearn_start"
 UE_KEY_UNLEARN_END = "UE_unlearn_end"
 UE_KEY_UNLEARN_TIME = "UE_unlearn_time"
 UE_KEY_UNLEARN_LOSS_SCORE = "UE_unlearn_loss_score"
+UE_KEY_INFERENCE = "inference"
 
 UE_ERROR_LOGGER = "UE_error_logger"
 
@@ -269,7 +270,7 @@ class UEHelper(object):
 
     def print_ue_unlearn_values(self):
         """
-        print current UE unlearning values as key-=alue pairs to pass to the wrapper
+        print current UE unlearning values as key=value pairs to pass to the wrapper
         """
         print(f"{UE_KEY_CUDA}={self.cuda_status}")
         print(f"{UE_KEY_DATASET}={self.dataset}")
@@ -454,7 +455,7 @@ def ue_store_metrics(nametag,
                            f"GPUSecs," \
                            f"GPUMemAvg," \
                            f"GPUMemPeak," \
-                           f"UnlearnScore" \
+                           f"InferenceScore" \
                            f"\n"
         store_csv = store_csv_header + store_csv_data
         with open(store_file, "w") as fd:
