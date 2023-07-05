@@ -201,10 +201,11 @@ class UEHelper(object):
 
     def set_ue_value(self, keyword, value):
         if keyword == UE_KEY_CUDA:
-            if value not in self.VALID_CUDA_STATES:
-                self.cuda_status = 'UNKNOWN'
-                return
-            self.cuda_status = value
+            if value:
+                self.cuda_status = self.CUDA_STATE_GPU
+            else:
+                self.cuda_status = self.CUDA_STATE_CPU
+            return
         elif keyword == UE_KEY_DATASET:
             if not isinstance(value, str):
                 print(f"Dataset must be a string. Got '{value}")
@@ -257,7 +258,7 @@ class UEHelper(object):
 
     def print_ue_training_values(self):
         """
-        print current UE training values as key-value pairs to pass to the wrapper
+        print current UE training values as key=value pairs to pass to the wrapper
         """
         print(f"{UE_KEY_CUDA}={self.cuda_status}")
         print(f"{UE_KEY_DATASET}={self.dataset}")
@@ -268,7 +269,7 @@ class UEHelper(object):
 
     def print_ue_unlearn_values(self):
         """
-        print current UE unlearning values as key-value pairs to pass to the wrapper
+        print current UE unlearning values as key-=alue pairs to pass to the wrapper
         """
         print(f"{UE_KEY_CUDA}={self.cuda_status}")
         print(f"{UE_KEY_DATASET}={self.dataset}")
@@ -278,6 +279,9 @@ class UEHelper(object):
 
 
 def ue_print_piped_message(message):
+    """
+    Writes message to stdout, splitting by linebreaks. Used for passing errors to the UE wrapper.
+    """
     lines = str(message).split('/n')
     for line in lines:
         print(line)
@@ -379,12 +383,14 @@ def ue_store_metrics(nametag,
                      cpu_peak_memory_MiB,
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
-                     gpu_peak_memory_MiB
+                     gpu_peak_memory_MiB,
+                     unlearn_score=0.0
                      ):
     """
-    Store the score and training time for the operation.
+    Store the score and training time for the operation. Appends to a CSV results file
+    named for the nametag, creating it if it doesn't exist.
     Args:
-        nametag (string): tag name associated with this training/unlearning scenario.
+        nametag (string): tag name for the model
         operation (string): TRAINING or UNLEARNING
         cuda_status (string): True if CUDA is enabled for the operation
         dataset (string): dataset in use.
@@ -400,6 +406,7 @@ def ue_store_metrics(nametag,
         gpu_cumulative_seconds (float): Total GPU seconds used in training,
         gpu_average_memory_MiB (float): Average GPU memory usage during training
         gpu_peak_memory_MiB (float): peak memory usage during training
+        unlearn_score (float): percentage of unlearnt data remaining in model.
 :return
         -
     """
@@ -427,6 +434,7 @@ def ue_store_metrics(nametag,
                      f"{gpu_cumulative_seconds}," \
                      f"{gpu_average_memory_MiB}," \
                      f"{gpu_peak_memory_MiB}" \
+                     f"{unlearn_score}" \
                      f"\n"
     if not os.path.exists(store_file):
         store_csv_header = f"nametag," \
@@ -445,7 +453,8 @@ def ue_store_metrics(nametag,
                            f"CPUMemPeak," \
                            f"GPUSecs," \
                            f"GPUMemAvg," \
-                           f"GPUMemPeak" \
+                           f"GPUMemPeak," \
+                           f"UnlearnScore" \
                            f"\n"
         store_csv = store_csv_header + store_csv_data
         with open(store_file, "w") as fd:
@@ -533,7 +542,7 @@ def ue_set_stats_mode_train(nametag, verbose=False):
     """
     Sets the mode for the stats updates for the nametag to TRAIN
     Args:
-        UE (class): UE instance
+        nametag (string): tag name for the model
         verbose (bool): verbose mode.
     """
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
@@ -548,7 +557,7 @@ def ue_set_stats_mode_unlearn(nametag, verbose=False):
     """
     Sets the mode for the stats updates for the nametag to UNLEARN
     Args:
-        nametag (class): Run nametag
+        nametag (string): tag name for the model
         verbose (bool): verbose mode.
     """
     if not os.path.exists(UE_STATS_STORE_DIRECTORY):
@@ -565,7 +574,7 @@ def ue_get_stats_mode(nametag, verbose=False):
     Gets the current mode for the stats updates for the current instance. This is gleaned
     from a file in the stats store directory called <nametag>-mode.dat.
     Args:
-        nametag (string): name of test run
+        nametag (string): tag name for the model
         verbose (bool): verbose mode.
     Return:
         (string): current mode.
@@ -596,7 +605,7 @@ def ue_get_and_store_gpu_stats(nametag, interval, verbose):
     This runs as a thread in parallel with a Training/unlearning operation
     gets terminated by the operation when it completes.
     Args:
-        nametag (string): Tag name for run
+        nametag (string): tag name for the model
         interval (int): Number of seconds between readings
         verbose (bool): verbose mode.
     """
@@ -638,7 +647,7 @@ def ue_get_and_store_system_stats(nametag, interval, verbose):
     This runs as a thread in parallel with a Training/unlearning operation
     gets terminated by the operation when it completes.
     Args:
-        nametag (string): nametag for run
+        nametag (string): tag name for the model
         interval (int): Number of seconds between readings
         verbose (bool): verbose mode.
     """
@@ -673,7 +682,7 @@ def ue_get_gpu_cpu_stats(nametag, stats_type, operation, verbose):
     Reads the stats file for the named stats type and summarises its contents to generate
     cumulative CPG/GPU, average memory and peak memory values for a run
     Args:
-        nametag (string): Job nametag
+        nametag (string): tag name for the model
         stats_type (string): CPU or GPU
         operation (string): train or unlearn operation
         verbose (bool): verbose mode.
@@ -724,7 +733,7 @@ def ue_setup(title, nametag, cuda, dataset):
     Instantiate the Unlearning Effectiveness helper with initial parameters
     Args:
         title (string): Friendly name for the class instantiation
-        nametag (string): Tag name for the instantiation. Used for dats storage
+        nametag (string): tag name for the model
         cuda (bool): CUDA status
         dataset (string): Name of dataset being used for this instantiation
     Return:
