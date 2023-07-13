@@ -2,8 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Unlearning Effectiveness (UE) wrapper - used to run, generate and store metrics used to
-generate a UE score for a model
+Unlearning Effectiveness (UE) module used to execute 3rd party code. Can be used to perform train, unlearn
+and membership inference operations on the target code. Gathers system stats (elapsed time, CPU time, average
+CPU memory usage, GPU time, GPU memory usage) during execution. When the call is complete, stores the resultant
+stats along with the results including the training loss score, the loss score after unlearning and the membership
+inference score
 """
 
 import argparse
@@ -16,7 +19,7 @@ import torch
 import torchvision
 from torchvision.datasets import MNIST, CIFAR10
 
-from UE_helper import (
+from UE_interface import (
     ue_extract_token_value,
     UE_KEY_CUDA,
     UE_KEY_DATASET,
@@ -103,43 +106,24 @@ EXECUTION_COMMANDS = {
         RUN_ARGS: []
     }
 }
-###########################################################
-# End of section to be changed for each 3rd party code base
-###########################################################
+##############################################################
+# End of section to be configured for each 3rd party code base
+# Code beyond this point may also be modified to fit with the
+# arguments required by the target code.
+##############################################################
 
 def display_errors(errors):
     for line in errors.split("\n"):
         print(f"ERROR: {line}")
 
-def get_training_data(dataset, data_start, data_count, verbose):
-    """
-    Returns an iterator for the specified dataset starting at an offset of data_start into the data
-    and running up to data_count.
-    Args:
-        dataset (string): name of dataset
-        data_start (int): Start index into dataset
-        data_count (int): Number of data items in iterator
-        verbose (bool): verbose mode
-    Returns:
-        (iterator): Training data or None if an unknown dataset is passed.
-    """
-    if dataset == MNIST.__name__:
-        train_set = torchvision.datasets.MNIST(root='./data', train=True,
-                                               download=True, transform=None)
-        if data_count is None:
-            filtered_train_set = train_set
-        else:
-            data_filter = list(range(data_start, data_start + data_count))
-            filtered_train_set = torch.utils.data.Subset(train_set, data_filter)
-        return filtered_train_set
-    print(f"{dataset} is not available")
-    return None
 
 def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
     """
-    Calls 3rd party code defined in TRAIN_SCRIPT to train a model and gather metrics.
-    Creates parallel processes to train, gather CPU stats and gather GPU stats for the
-    training period.
+    Calls 3rd party code.
+    Creates a processes to train a model and when complete, terminates the parallel CPU and GPU collector
+    processes and stores the resulting stats in UE storage.
+    Can request that the resultant model is stored in UE storage if the 3rd party code has
+    the --UE_store_model option configured.
     Args:
         nametag (string): tag name for the model
         epochs (int): Number of epochs to run
@@ -148,12 +132,7 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
         removal_mode (string): one of "feature", "node" or "edge" (3rd part code specific parameter)
         verbose (bool): Verbose trace
     :returns:
-        cuda_status (string) True if CUDA is enabled in the target code.
-        dataset (string): Name of dataset being used
-        training_size (int): size of training dataset
-        test_size (int): size of test dataset
-        training_time (string): Time taken to train
-        training_score (float): Loss score after training.
+        -
     """
 
     # Note that Popen requires each argument to be passed as a separate string in a list.
@@ -203,6 +182,7 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
         print(f"Unable to gather stats from code execution, error '{e}'")
         exit(1)
     num_removes = 0
+    inference_score = 0
     cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
         ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_TRAIN_MODEL, verbose)
     gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
@@ -222,15 +202,18 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
                      cpu_peak_memory_MiB,
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
-                     gpu_peak_memory_MiB
+                     gpu_peak_memory_MiB,
+                     inference_score
                      )
 
 
 def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
     """
-    Calls 3rd party code defined in UNLEARN_SCRIPT to unlearn data from a model and gather metrics.
-    Creates parallel processes to train, gather CPU stats and gather GPU stats for the
-    unlearning period.
+    Calls 3rd party code.
+    Creates a processes to unlearn data from a model and when complete, terminates the
+    parallel CPU and GPU collector processes and stores the resulting stats in UE storage.
+    Can request that the resultant model is stored in UE storage if the 3rd party code has
+    the --UE_store_model option configured.
     Args:
         nametag (string): tag name for the model
         num_removes (int): Number of items to remove
@@ -239,12 +222,7 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
         removal_mode (string): one of "feature", "node" or "edge" (3rd part code specific parameter)
         verbose (bool): Verbose trace
     :returns:
-        cuda_status (string) True if CUDA is enabled in the target code.
-        dataset (string): Name of dataset being used
-        training_size (int): size of training dataset
-        test_size (int): size of test dataset
-        training_time (string): Time taken to train
-        training_score (float): Loss score after training.
+        -
     """
 
     # Note that Popen requires each argument to be passed as a separate string in a list.
@@ -299,6 +277,7 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
         ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_UNLEARN_MODEL, verbose)
     test_size = 0
     training_size = 0
+    inference_score = 0
 
     ue_store_metrics(nametag,
                      UE_UNLEARN_MODEL,
@@ -315,31 +294,29 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
                      cpu_peak_memory_MiB,
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
-                     gpu_peak_memory_MiB
+                     gpu_peak_memory_MiB,
+                     inference_score
                      )
 
 
 def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_collector, verbose):
     """
-    For use with 3rd party code where the train and unlearn activities are performed in the same code segment
-    Creates parallel processes to train/unlearn, gather CPU stats and gather GPU stats for the
-    unlearning period.
-    *** Per-codebase specific. ***
+    *** Codebase specific. ***
+    **************************
+    For use with 3rd party code where the train and unlearn activities are performed in the same code segment.
+    Creates a processes to train/unlearn, and when complete, terminates the parallel CPU and GPU collector
+    processes and stores the resulting stats in UE storage.
+    Can request that the resultant model is stored in UE storage if the 3rd party code has
+    the --UE_store_model option configured.
     Args:
         nametag (string): tag name for the model
-        executable_filename (string): Name of file to run to perform the training.
         num_removes (int): Number of elements to remove in unlearning
+        removal_mode (string): one of "feature", "node" or "edge" (codebase specific, not used here.)
         gpu_collector (thread): To be terminated at end of run
         cpu_collector (thread): To be terminated at end of run
-        removal_mode (string): one of "feature", "node" or "edge"
         verbose (bool): Verbose trace
     :returns:
-        cuda_status (string) True if CUDA is enabled in the target code.
-        dataset (string): Name of dataset being used
-        training_size (int): size of training dataset
-        test_size (int): size of test dataset
-        training_time (string): Time taken to train
-        training_score (float): Loss score after training.
+        -
     """
 
     # Note that Popen requires each argument to be passed as a separate string in a list.
@@ -393,6 +370,7 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
         print("Unable to gather stats from code execution")
         exit(1)
 
+    inference_score = 0
     cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
         ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_TRAIN_MODEL, verbose)
     gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
@@ -412,14 +390,14 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
                      cpu_peak_memory_MiB,
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
-                     gpu_peak_memory_MiB
+                     gpu_peak_memory_MiB,
+                     inference_score
                      )
 
 
 def membership_inference(nametag, unlearned_data, verbose):
     """
     For use with 3rd party code to infer if the unlearned_data exists in a model.
-    TODO
     Args:
         nametag (string): tag name for the model
         unlearned_data (int): Data to test for in the model
@@ -430,26 +408,16 @@ def membership_inference(nametag, unlearned_data, verbose):
         inference_score (float): Percentage of unlearned data detected in the mode.
     """
     # Note that Popen requires each argument to be passed as a separate string in a list.
-    if not os.path.exists(UE_MODEL_STORE_DIRECTORY):
-        os.makedirs(UE_MODEL_STORE_DIRECTORY)
-    existing_models = ue_get_files_in_directory(UE_MODEL_STORE_DIRECTORY)
-    requested_model = f"{nametag}.pt"
-    if requested_model not in existing_models:
-        print(f"Model {requested_model} will be created in {UE_MODEL_STORE_DIRECTORY}")
-    else:
-        print(f"Model must exist to determine an imembership nference score")
     executable_filename = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][RUN_SCRIPT]
     executable_params = EXECUTION_COMMANDS[UE_OPERATION_UNLEARN][RUN_ARGS]
     system_command = \
         ["python3",
          f"{executable_filename}"] + \
         executable_params + \
-        ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
-         "--UE_nametag", f"{nametag}",
-         "--unlearned_data", f"{unlearned_data}"]
+        ["--UE_nametag", f"{nametag}"]
 
     if verbose:
-        print(f"Calling 3rd party training executable using '{system_command}'")
+        print(f"Calling 3rd party membership inference executable using '{system_command}'")
     process = Popen(system_command, stdout=PIPE, stderr=PIPE)
     stdout, stderr = process.communicate()
     if len(stderr) != 0:
@@ -496,31 +464,28 @@ def membership_inference(nametag, unlearned_data, verbose):
                      cpu_peak_memory_MiB,
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
-                     gpu_peak_memory_MiB
+                     gpu_peak_memory_MiB,
+                     inference_score
                      )
 
 
 
 def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mode, verbose):
     """
-    Perform the operation (TRAIN or UNLEARN) using the executable_filename, storing data
-    in files named for the nametag. Epochs is used for learning.
-    The operation is kicked off in parallel with two additional processes, one to gather GPU stats
-    and one to gather stats from the rest of the system.
+    Perform the operation (training, unlearing or membership inference) using the configured
+    external script as an entry point, storing temporary and results data in files named for the nametag.
+    "Epochs" is used for learning, "num_removes" for unlearning.
+    The operation is kicked off in parallel with two additional processes, one to gather GPU and
+    GPU memory stats, and one to gather CPU and mCPU emory stats.
     Args:
-         operation (string): One of TRAIN or UNLEARN
+         operation (string): One of train, unlearn or membership inference
          nametag (string): tag name for the model
          epochs (int): Number of training epochs
          num_removes (int): Number of elements to remove in unlearning
-         removal_mode (string): one of "feature", "node" or "edge"
+         removal_mode (string): one of "feature", "node" or "edge" (as examples)
          verbose (bool): Verbose trace
     Returns:
-        cuda_status (string) True if CUDA is enabled in the target code.
-        dataset (string): Name of dataset being used
-        training_size (int): size of training dataset
-        test_size (int): size of test dataset
-        training_time (string): Time taken to train
-        training_score (float): Loss score after training.
+        -
     """
     if operation in [UE_OPERATION_UNLEARN]:
         ue_set_stats_mode_unlearn(nametag)
@@ -535,7 +500,7 @@ def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mo
         multiprocessing.Process(target=ue_get_and_store_system_stats, args=(nametag, UE_STATS_INTERVAL_SECS, False))
     cpu_collector.start()
     if operation == UE_OPERATION_TRAIN:
-        print("Starting process to train the model")
+        print(f"Starting process to train the model")
         run_task = multiprocessing.Process(target=train_model,
                                            args=(nametag,
                                                  epochs,
@@ -543,7 +508,7 @@ def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mo
                                                  cpu_collector,
                                                  verbose))
     elif operation == UE_OPERATION_UNLEARN:
-        print("Starting process to train the model")
+        print("Starting process to unlearn the model")
         run_task = multiprocessing.Process(target=unlearn_model,
                                            args=(nametag,
                                                  num_removes,
@@ -551,7 +516,7 @@ def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mo
                                                  cpu_collector,
                                                  verbose))
     elif operation == UE_OPERATION_INFERENCE:
-        print("Starting process to train the model")
+        print("Starting process to perform membership inference on the model")
         run_task = multiprocessing.Process(target=membership_inference,
                                            args=(nametag,
                                                  num_removes,
@@ -564,76 +529,47 @@ def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mo
         sys.exit(1)
     run_task.start()
     run_task.join()
-    print(f"'{operation} has completed")
+    print(f"Operation '{operation}' has completed")
+
 
 def main():
     (
-        list_datasets,
-        operation,
-        dataset,
         nametag,
-        unlearn,
-        display_metrics,
-        display_metrics_nametags,
-        display_inference_score,
-        epochs,
+        operation,
         num_removes,
         removal_mode,
+        epochs,
+        display_metrics_nametags,
+        display_metrics,
         verbose,
     ) = check_args((sys.argv[1:]))
 
     msg = (
-        f"list_datasets:            {list_datasets}\n"
-        f"operation:                {operation}\n"
-        f"dataset:                  {dataset}\n"
         f"nametag:                  {nametag}\n"
-        f"unlearn:                  {unlearn}\n"
-        f"display_metrics:          {display_metrics}\n"
-        f"display_metrics_nametags: {display_metrics_nametags}\n"
-        f"display_inference_score:  {display_inference_score}\n"
-        f"epochs:                   {epochs}\n"
-        f"num_removes:              {num_removes}\n"
+        f"operation:                {operation}\n"
         f"removal_mode:             {removal_mode}\n"
+        f"num_removes:              {num_removes}\n"
+        f"display_metrics_nametags: {display_metrics_nametags}\n"
+        f"display_metrics:          {display_metrics}\n"
+        f"epochs:                   {epochs}\n"
         f"verbose:                  {verbose}\n"
     )
     print(msg)
 
-    if display_metrics is not None or display_metrics_nametags:
-        ue_display_stats(nametag, display_metrics, display_metrics_nametags)
-        sys.exit(0)
-
     if operation not in UE_VALID_OPERATIONS:
         print(f"Invalid operation {operation}")
         sys.exit(1)
+
+    if display_metrics is not None or display_metrics_nametags:
+        ue_display_stats(nametag, display_metrics, display_metrics_nametags)
+        sys.exit(0)
 
     process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mode, verbose)
 
 
 def check_args(args=None):
 
-    parser = argparse.ArgumentParser(description='docker wrapper')
-
-    parser.add_argument(
-        '-ls', '--list_datasets',
-        help='List the names of datasets that this container can use',
-        required=False,
-        default=False,
-        action='store_true'
-    )
-
-    parser.add_argument(
-        '-o', '--operation',
-        help='Operation to perform. Must be one of train or unlearn.',
-        required=False,
-        default=UE_OPERATION_TRAIN,
-    )
-
-    parser.add_argument(
-        '-data', '--dataset',
-        help='Name of dataset to use for training. Default is CIFAR10 for this wrapper',
-        required=False,
-        default=CIFAR10
-    )
+    parser = argparse.ArgumentParser(description='Unlearning Effectiveness entry point')
 
     parser.add_argument(
         '-tag', '--nametag',
@@ -643,33 +579,10 @@ def check_args(args=None):
     )
 
     parser.add_argument(
-        '-ul', '--unlearn',
-        help='Unlearn the data in the specified filename from the nametag model',
+        '-o', '--operation',
+        help='Operation to perform. Must be one of train, unlearn or inference.',
         required=False,
-        default=None
-    )
-
-    parser.add_argument(
-        '-dm', '--display_metrics',
-        help='Display metrics - can use training, unlearning or all',
-        required=False,
-        default=None
-    )
-
-    parser.add_argument(
-        '-dn', '--display_metrics_nametags',
-        help='Display the nametags for stored metrics',
-        required=False,
-        default=False,
-        action='store_true'
-    )
-
-    parser.add_argument(
-        '-dis', '--display_inference_score',
-        help='Display the membership inference score for an unlearnt model',
-        required=False,
-        default=False,
-        action='store_true'
+        default=UE_OPERATION_TRAIN,
     )
 
     parser.add_argument(
@@ -681,16 +594,39 @@ def check_args(args=None):
 
     parser.add_argument(
         '-rm', '--removal_mode',
-        help='Set removal mode - can be "feature", "node" or "edge". Default is "feature"',
+        help='Codebase specific - Set removal mode - examples are "feature", "node" or "edge". Default is "feature"',
         required=False,
         default='feature'
     )
 
     parser.add_argument(
         '-e', '--epochs',
-        help='Set number of items for removal, default 800',
+        help='Codebase specific - Set number of items for removal, default 150',
         required=False,
         default=150
+    )
+
+    parser.add_argument(
+        '-ls', '--list_datasets',
+        help='List the names of datasets that this container can use',
+        required=False,
+        default=False,
+        action='store_true'
+    )
+
+    parser.add_argument(
+        '-dn', '--display_metrics_nametags',
+        help='Display the nametags for stored metrics',
+        required=False,
+        default=False,
+        action='store_true'
+    )
+
+    parser.add_argument(
+        '-dm', '--display_metrics',
+        help='Display metrics - can use training, unlearning or all',
+        required=False,
+        default=None
     )
 
     parser.add_argument(
@@ -704,17 +640,13 @@ def check_args(args=None):
     cmd_line_args = parser.parse_args(args)
 
     return(
-        cmd_line_args.list_datasets,
-        cmd_line_args.operation,
-        cmd_line_args.dataset,
         cmd_line_args.nametag,
-        cmd_line_args.unlearn,
-        cmd_line_args.display_metrics,
-        cmd_line_args.display_metrics_nametags,
-        cmd_line_args.display_inference_score,
-        cmd_line_args.epochs,
+        cmd_line_args.operation,
         cmd_line_args.num_removes,
         cmd_line_args.removal_mode,
+        cmd_line_args.epochs,
+        cmd_line_args.display_metrics_nametags,
+        cmd_line_args.display_metrics,
         cmd_line_args.verbose,
     )
 

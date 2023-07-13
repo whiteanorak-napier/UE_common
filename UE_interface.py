@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 
 """
-UE_helper module - import into 3rd party code to provide the functionality for generating metrics
-for calculating Unlearning Effectiveness.
+UE_interface module - import into 3rd party code to provide the functionality for the
+generation of metrics for Unlearning Effectiveness.
 
 Recommended imports for a new code base:
 
 1. Imports:
 
-    from UE_helper import (
+    from UE_interface import (
         ue_setup,
         ue_start_training,
         ue_stop_training,
@@ -156,8 +156,7 @@ DATETIME_FORMAT = "%Y-%m-%d_%H:%M:%S"
 
 class UEHelper(object):
     """
-    Class to be used in third party code to interface to the Unlearning
-    Effectiveness wrapper.
+    Class to be instantiated by third party code to store UE operation results.
     """
 
     VALID_UE_KEYWORDS = [UE_KEY_CUDA,
@@ -352,7 +351,7 @@ def ue_get_unlearn_data(unlearn_filename):
 
 def get_stored_nametags():
     """
-    Returns a list of nametags in  DATA_STORE_DIRECTORY
+    Returns a list of nametags in DATA_STORE_DIRECTORY
     Args
         -
     Returns:
@@ -366,7 +365,7 @@ def get_stored_nametags():
     for filename in filename_list:
         nametag = filename.split('_')[0]
         nametag_list.append(nametag)
-    return nametag_list, filename_list
+    return nametag_list
 
 
 def ue_store_metrics(nametag,
@@ -385,14 +384,16 @@ def ue_store_metrics(nametag,
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
                      gpu_peak_memory_MiB,
-                     unlearn_score=0.0
+                     unlearn_score=0.0,
+                     inference_score=0.0
                      ):
     """
     Store the score and training time for the operation. Appends to a CSV results file
-    named for the nametag, creating it if it doesn't exist.
+    named for the nametag, creating it if it doesn't exist. Each run has a datestamp to make each unique
+    and logged separately.
     Args:
         nametag (string): tag name for the model
-        operation (string): TRAINING or UNLEARNING
+        operation (string): TRAINING or UNLEARNING or INFERENCE
         cuda_status (string): True if CUDA is enabled for the operation
         dataset (string): dataset in use.
         epochs (int): Number of epochs used in learning
@@ -408,6 +409,7 @@ def ue_store_metrics(nametag,
         gpu_average_memory_MiB (float): Average GPU memory usage during training
         gpu_peak_memory_MiB (float): peak memory usage during training
         unlearn_score (float): percentage of unlearnt data remaining in model.
+        inference_score (float): Membership inference score.
 :return
         -
     """
@@ -434,8 +436,9 @@ def ue_store_metrics(nametag,
                      f"{cpu_peak_memory_MiB}," \
                      f"{gpu_cumulative_seconds}," \
                      f"{gpu_average_memory_MiB}," \
-                     f"{gpu_peak_memory_MiB}" \
-                     f"{unlearn_score}" \
+                     f"{gpu_peak_memory_MiB}," \
+                     f"{unlearn_score}," \
+                     f"{inference_score}" \
                      f"\n"
     if not os.path.exists(store_file):
         store_csv_header = f"nametag," \
@@ -455,6 +458,7 @@ def ue_store_metrics(nametag,
                            f"GPUSecs," \
                            f"GPUMemAvg," \
                            f"GPUMemPeak," \
+                           f"unlearnScore," \
                            f"InferenceScore" \
                            f"\n"
         store_csv = store_csv_header + store_csv_data
