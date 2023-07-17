@@ -34,14 +34,12 @@ from UE_interface import (
     UE_CPU_STATS,
     UE_GPU_STATS,
     UE_STATS_INTERVAL_SECS,
-    UE_TRAIN_MODEL,
-    UE_UNLEARN_MODEL,
-    UE_OPERATION_TRAIN_UNLEARN,
-    UE_OPERATION_WATERMARK,
 
     UE_OPERATION_TRAIN,
     UE_OPERATION_UNLEARN,
     UE_OPERATION_INFERENCE,
+    UE_OPERATION_TRAIN_UNLEARN,
+    UE_OPERATION_WATERMARK,
     UE_OPERATION_DISPLAY_TAGS,
     UE_OPERATION_DISPLAY_STATS,
     UE_VALID_OPERATIONS,
@@ -189,13 +187,12 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
         print(f"Unable to gather stats from code execution, error '{e}'")
         exit(1)
     num_removes = 0
-    inference_score = 0
     cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_TRAIN_MODEL, verbose)
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_OPERATION_TRAIN, verbose)
     gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_TRAIN_MODEL, verbose)
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_OPERATION_TRAIN, verbose)
     ue_store_metrics(nametag,
-                     UE_TRAIN_MODEL,
+                     UE_OPERATION_TRAIN,
                      cuda_status,
                      dataset,
                      epochs,
@@ -210,7 +207,6 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
                      gpu_peak_memory_MiB,
-                     inference_score
                      )
 
 
@@ -279,15 +275,14 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
         exit(1)
 
     cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_UNLEARN_MODEL, verbose)
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_OPERATION_UNLEARN, verbose)
     gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_UNLEARN_MODEL, verbose)
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_OPERATION_UNLEARN, verbose)
     test_size = 0
     training_size = 0
-    inference_score = 0
 
     ue_store_metrics(nametag,
-                     UE_UNLEARN_MODEL,
+                     UE_OPERATION_UNLEARN,
                      cuda_status,
                      dataset,
                      num_removes,
@@ -302,7 +297,6 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
                      gpu_peak_memory_MiB,
-                     inference_score
                      )
 
 
@@ -374,16 +368,36 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
         if verbose:
             print(f"Training Time = {training_time}, Training Score = {training_score}")
     except Exception as e:
-        print("Unable to gather stats from code execution")
+        print(f"Unable to gather stats from code execution, error {e}")
         exit(1)
 
-    inference_score = 0
     cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_TRAIN_MODEL, verbose)
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_OPERATION_TRAIN, verbose)
     gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_TRAIN_MODEL, verbose)
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_OPERATION_TRAIN, verbose)
     ue_store_metrics(nametag,
-                     UE_UNLEARN_MODEL,
+                     UE_OPERATION_TRAIN,
+                     cuda_status,
+                     dataset,
+                     num_removes,
+                     training_size,
+                     test_size,
+                     unlearning_size,
+                     training_score,
+                     training_time,
+                     cpu_cumulative_seconds,
+                     cpu_average_memory_MiB,
+                     cpu_peak_memory_MiB,
+                     gpu_cumulative_seconds,
+                     gpu_average_memory_MiB,
+                     gpu_peak_memory_MiB,
+                     )
+    cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_OPERATION_UNLEARN, verbose)
+    gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_OPERATION_UNLEARN, verbose)
+    ue_store_metrics(nametag,
+                     UE_OPERATION_UNLEARN,
                      cuda_status,
                      dataset,
                      num_removes,
@@ -398,7 +412,6 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
                      gpu_peak_memory_MiB,
-                     inference_score
                      )
 
 
@@ -447,7 +460,6 @@ def membership_inference(nametag, unlearned_data, verbose):
     test_size = 0
     training_size = 0
     unlearning_size = 0
-    unlearning_score = 0
     unlearning_time = timedelta(days=0)
     cpu_cumulative_seconds = 0.0
     cpu_average_memory_MiB = 0.0
@@ -457,14 +469,14 @@ def membership_inference(nametag, unlearned_data, verbose):
     gpu_peak_memory_MiB = 0.0
     num_removes = 0
     ue_store_metrics(nametag,
-                     UE_UNLEARN_MODEL,
+                     UE_OPERATION_INFERENCE,
                      cuda_status,
                      dataset,
                      num_removes,
                      training_size,
                      test_size,
                      unlearning_size,
-                     unlearning_score,
+                     inference_score,
                      unlearning_time,
                      cpu_cumulative_seconds,
                      cpu_average_memory_MiB,
@@ -472,7 +484,6 @@ def membership_inference(nametag, unlearned_data, verbose):
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
                      gpu_peak_memory_MiB,
-                     inference_score
                      )
 
 def train_watermarked_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
@@ -540,13 +551,12 @@ def train_watermarked_model(nametag, epochs, gpu_collector, cpu_collector, verbo
         print(f"Unable to gather stats from code execution, error '{e}'")
         exit(1)
     num_removes = 0
-    inference_score = 0
     cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_TRAIN_MODEL, verbose)
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_OPERATION_TRAIN, verbose)
     gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
-        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_TRAIN_MODEL, verbose)
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_OPERATION_TRAIN, verbose)
     ue_store_metrics(nametag,
-                     UE_TRAIN_MODEL,
+                     UE_OPERATION_TRAIN,
                      cuda_status,
                      dataset,
                      epochs,
@@ -561,7 +571,6 @@ def train_watermarked_model(nametag, epochs, gpu_collector, cpu_collector, verbo
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
                      gpu_peak_memory_MiB,
-                     inference_score
                      )
 
 

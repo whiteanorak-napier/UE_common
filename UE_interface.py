@@ -158,12 +158,15 @@ UE_VALID_OPERATIONS = [
 
 UE_VALID_WRITE_OPERATIONS = [
     UE_OPERATION_TRAIN,
-    UE_OPERATION_UNLEARN
+    UE_OPERATION_UNLEARN,
+    UE_OPERATION_TRAIN_UNLEARN,
+    UE_OPERATION_ALL
 ]
 UE_VALID_READ_OPERATIONS = [
     UE_OPERATION_TRAIN,
     UE_OPERATION_UNLEARN,
-    UE_OPERATION_ALL]
+    UE_OPERATION_ALL
+]
 
 UE_STATS_INTERVAL_SECS = 5
 UE_GPU_STATS = 'gpu'
@@ -398,9 +401,7 @@ def ue_store_metrics(nametag,
                      cpu_peak_memory_MiB,
                      gpu_cumulative_seconds,
                      gpu_average_memory_MiB,
-                     gpu_peak_memory_MiB,
-                     unlearn_score=0.0,
-                     inference_score=0.0
+                     gpu_peak_memory_MiB
                      ):
     """
     Store the score and training time for the operation. Appends to a CSV results file
@@ -415,7 +416,7 @@ def ue_store_metrics(nametag,
         training_size (int): Number of elements in dataset used for training
         test_size (int): Number of elements in dataset used for testing
         unlearning_size (int): Number of elements in unlearning data set
-        operation_score (float): Model loss score after the operation
+        operation_score (float): score for the named operation
         operation_time (timedelta): time taken to perform the operation
         cpu_cumulative_seconds (float): Total CPU seconds used in training
         cpu_average_memory_MiB (float): Average system memory usage during training
@@ -423,8 +424,6 @@ def ue_store_metrics(nametag,
         gpu_cumulative_seconds (float): Total GPU seconds used in training,
         gpu_average_memory_MiB (float): Average GPU memory usage during training
         gpu_peak_memory_MiB (float): peak memory usage during training
-        unlearn_score (float): percentage of unlearnt data remaining in model.
-        inference_score (float): Membership inference score.
 :return
         -
     """
@@ -452,8 +451,6 @@ def ue_store_metrics(nametag,
                      f"{gpu_cumulative_seconds}," \
                      f"{gpu_average_memory_MiB}," \
                      f"{gpu_peak_memory_MiB}," \
-                     f"{unlearn_score}," \
-                     f"{inference_score}" \
                      f"\n"
     if not os.path.exists(store_file):
         store_csv_header = f"nametag," \
@@ -473,8 +470,6 @@ def ue_store_metrics(nametag,
                            f"GPUSecs," \
                            f"GPUMemAvg," \
                            f"GPUMemPeak," \
-                           f"unlearnScore," \
-                           f"InferenceScore" \
                            f"\n"
         store_csv = store_csv_header + store_csv_data
         with open(store_file, "w") as fd:
