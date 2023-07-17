@@ -42,9 +42,12 @@ from UE_interface import (
     UE_OPERATION_TRAIN,
     UE_OPERATION_UNLEARN,
     UE_OPERATION_INFERENCE,
+    UE_OPERATION_DISPLAY_TAGS,
+    UE_OPERATION_DISPLAY_STATS,
     UE_VALID_OPERATIONS,
 
-    ue_display_stats,
+    ue_get_stored_nametags,
+    ue_get_effectiveness_stats,
     ue_get_files_in_directory,
     ue_get_gpu_cpu_stats,
     ue_set_stats_mode_unlearn,
@@ -53,6 +56,7 @@ from UE_interface import (
     ue_get_and_store_system_stats,
     ue_print_formatted_bytestring,
     ue_store_metrics,
+    ue_display_stats_and_generate_mue
 )
 
 DATETIME_FORMAT = "%Y-%m-%d_%H:%M:%S"
@@ -639,8 +643,6 @@ def main():
         num_removes,
         removal_mode,
         epochs,
-        display_metrics_nametags,
-        display_metrics,
         verbose,
     ) = check_args((sys.argv[1:]))
 
@@ -649,8 +651,6 @@ def main():
         f"operation:                {operation}\n"
         f"removal_mode:             {removal_mode}\n"
         f"num_removes:              {num_removes}\n"
-        f"display_metrics_nametags: {display_metrics_nametags}\n"
-        f"display_metrics:          {display_metrics}\n"
         f"epochs:                   {epochs}\n"
         f"verbose:                  {verbose}\n"
     )
@@ -660,10 +660,20 @@ def main():
         print(f"Invalid operation {operation}")
         sys.exit(1)
 
-    if display_metrics is not None or display_metrics_nametags:
-        ue_display_stats(nametag, display_metrics, display_metrics_nametags)
+    # Display operations
+    if operation == UE_OPERATION_DISPLAY_TAGS:
+        ue_get_stored_nametags(True)
         sys.exit(0)
 
+    if nametag is None:
+        print(f"A nametag must be supplied for a {operation} operation")
+        sys.exit(1)
+
+    if operation == UE_OPERATION_DISPLAY_STATS:
+        stats = ue_get_effectiveness_stats(nametag)
+        ue_display_stats_and_generate_mue(nametag, stats)
+        sys.exit(0)
+    # Processing operations
     process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mode, verbose)
 
 
@@ -674,13 +684,13 @@ def check_args(args=None):
     parser.add_argument(
         '-tag', '--nametag',
         help='Name or tag of model to train or unlearn from.',
-        required=True,
+        required=False,
         default=None
     )
 
     parser.add_argument(
         '-o', '--operation',
-        help='Operation to perform. Must be one of train, unlearn or inference.',
+        help='Operation to perform. Must be one of train, unlearn, inference, display_tags or display_stats',
         required=False,
         default=UE_OPERATION_TRAIN,
     )
@@ -707,29 +717,6 @@ def check_args(args=None):
     )
 
     parser.add_argument(
-        '-ls', '--list_datasets',
-        help='List the names of datasets that this container can use',
-        required=False,
-        default=False,
-        action='store_true'
-    )
-
-    parser.add_argument(
-        '-dn', '--display_metrics_nametags',
-        help='Display the nametags for stored metrics',
-        required=False,
-        default=False,
-        action='store_true'
-    )
-
-    parser.add_argument(
-        '-dm', '--display_metrics',
-        help='Display metrics - can use training, unlearning or all',
-        required=False,
-        default=None
-    )
-
-    parser.add_argument(
         '-v', '--verbose',
         help='Display runtime trace',
         required=False,
@@ -745,8 +732,6 @@ def check_args(args=None):
         cmd_line_args.num_removes,
         cmd_line_args.removal_mode,
         cmd_line_args.epochs,
-        cmd_line_args.display_metrics_nametags,
-        cmd_line_args.display_metrics,
         cmd_line_args.verbose,
     )
 

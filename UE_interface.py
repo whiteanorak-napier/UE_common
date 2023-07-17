@@ -94,8 +94,8 @@ Recommended imports for a new code base:
         UE - UE helper class instance
 """
 
-import csv
 from datetime import datetime
+import json
 import os
 from os import listdir
 from os.path import isfile, join
@@ -143,12 +143,16 @@ UE_OPERATION_UNLEARN = 'unlearn'
 UE_OPERATION_INFERENCE = 'inference'
 UE_OPERATION_ALL = "train_unlearn_inference"
 UE_OPERATION_WATERMARK = "watermark"
+UE_OPERATION_DISPLAY_TAGS = 'tags'
+UE_OPERATION_DISPLAY_STATS = 'stats'
 UE_VALID_OPERATIONS = [
     UE_OPERATION_TRAIN,
     UE_OPERATION_UNLEARN,
     UE_OPERATION_TRAIN_UNLEARN,
     UE_OPERATION_INFERENCE,
     UE_OPERATION_WATERMARK,
+    UE_OPERATION_DISPLAY_TAGS,
+    UE_OPERATION_DISPLAY_STATS,
     UE_OPERATION_ALL
 ]
 
@@ -166,7 +170,7 @@ UE_GPU_STATS = 'gpu'
 UE_CPU_STATS = 'cpu'
 
 DATETIME_FORMAT = "%Y-%m-%d_%H:%M:%S"
-
+UNIX_EPOCH = datetime.strptime('1970-01-01_00:00:00', DATETIME_FORMAT)
 
 
 class UEHelper(object):
@@ -379,25 +383,6 @@ def ue_get_unlearn_data(unlearn_filename):
     # TODO
 
 
-def get_stored_nametags():
-    """
-    Returns a list of nametags in DATA_STORE_DIRECTORY
-    Args
-        -
-    Returns:
-        (list): List of nametags
-    """
-    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
-        os.makedirs(UE_STATS_STORE_DIRECTORY)
-        return []
-    filename_list = [f for f in listdir(UE_STATS_STORE_DIRECTORY) if isfile(join(UE_STATS_STORE_DIRECTORY, f))]
-    nametag_list = []
-    for filename in filename_list:
-        nametag = filename.split('_')[0]
-        nametag_list.append(nametag)
-    return nametag_list
-
-
 def ue_store_metrics(nametag,
                      operation,
                      cuda_status,
@@ -500,52 +485,171 @@ def ue_store_metrics(nametag,
     print(f'Stored metrics for {operation} tag: "{nametag}" to "{store_file}"')
 
 
-def ue_display_stats(nametag, requested_operation, display_nametags):
+def ue_get_stored_nametags(display=False):
     """
-    Display the data associated with a training nametag
+    Gets a list of nametags in UE_STATS_STORE_DIRECTORY.
+    Displays the list if display is True
+    Returns the list and the name (with paths) of the files in the UE_STATS_STORE_DIRECTORY if display is False
+
     Args:
-        nametag (string): tag name for the model
-        requested_operation (string): UE_TRAINING, UE_UNLEARNING, ALL
-        display_nametags (Bool): Display nametags for available stored data
-    Return:
-        -
+        display (bool): Display nametags if True
+    Returns:
+         Nothing if display is False, otherwise:
+        (list): List of nametags
+        (list): List of filenames
     """
-    stored_nametag_list, filename_list = get_stored_nametags()
-    if display_nametags:
-        if len(stored_nametag_list) == 0:
-            print("No test metrics are available")
-            return
-        print("Available nametags with stored metrics:")
-        for tag in stored_nametag_list:
-            print(f"    {tag}")
-    if requested_operation is None:
-        return
-    if requested_operation not in UE_VALID_READ_OPERATIONS:
-        print(f"store_metrics: invalid operation {requested_operation}, must be one of {UE_VALID_READ_OPERATIONS},")
+    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
+        return []
+    filename_list = [f for f in listdir(UE_STATS_STORE_DIRECTORY) if isfile(join(UE_STATS_STORE_DIRECTORY, f))]
+    nametag_list = []
+    for filename in filename_list:
+        nametag = filename.split('_')[0]
+        nametag_list.append(nametag)
+
+    if display:
+        print("Current list of nametags in UE stats storage area:")
+        for tag in nametag_list:
+            print(tag)
         return
 
-    if len(stored_nametag_list) == 0:
-        print(f"\nNo nametag data exists in {UE_STATS_STORE_DIRECTORY}")
-        return
+    return nametag_list, filename_list
+
+
+
+def ue_get_effectiveness_stats(nametag):
+    """
+    Returns the latest stats for a nametag model as a JSON dict
+    Where multiple stats exist for a nametag model, return the latest for each category.
+    Args:
+        nametag (string): tag name for the model
+    Returns:
+        (DICT) {
+                train: {
+                    train_elapsed - (datetime) training elapsed time
+                    train_cpu_seconds (float) CPU seconds used during training
+                    train_cpu_avg_mem (float) average CPU memory usage during training
+                    train_gpu_seconds (float) GPU seconds used during training
+                    train_gpu_avg_mem (float) GPU average memory usage during training
+                    train_accuracy (float) training accuracy score
+                    }
+                unlearn: {
+                    unlearn_elapsed - (datetime) training elapsed time
+                    unlearn_cpu_seconds (float) CPU seconds used during training
+                    unlearn_cpu_avg_mem (float) average CPU memory usage during training
+                    unlearn_gpu_seconds (float) GPU seconds used during training
+                    unlearn_gpu_avg_mem (float) GPU average memory usage during training
+                    unlearn_accuracy (float) training accuracy score
+                    }
+                inference: {
+                    inference_score (float) membership inference score.
+                    }
+                }
+    """
+    stored_nametag_list, filename_list = ue_get_stored_nametags()
     if nametag not in stored_nametag_list:
-        print(f"\nNo metrics exist for nametag {nametag}")
+        print(f"No metrics for Nametag {nametag} exist in the model store")
+        return
+
+    train = {}
+    unlearn = {}
+    train_inference = {}
+    unlearn_inference = {}
+    last_train = UNIX_EPOCH
+    last_unlearn = UNIX_EPOCH
+    last_train_inference = UNIX_EPOCH
+    last_unlearn_inference = UNIX_EPOCH
+
     for filename in filename_list:
-        output = ""
         filename_nametag = filename.split('_')[0]
         if filename_nametag == nametag:
             full_filename = f"{UE_STATS_STORE_DIRECTORY}/{filename}"
-            with open(full_filename, mode='r') as csv_file:
-                csv_reader = csv.DictReader(csv_file)
-                count = 0
-                for row in csv_reader:
-                    if count == 0:
-                        header_line = '    ' + ','.join(row)
-                    stored_operation = row['operation']
-                    if stored_operation == requested_operation or requested_operation == UE_OPERATION_ALL:
-                        output = output + '    ' + ','.join(row.values()) + '\n'
-                    count += 1
-        print(f"\nFilename: '{filename}':\n{header_line}\n{output}")
+            df_stats = pd.read_csv(full_filename, index_col=False)
+            for i, row in df_stats.iterrows():
+                if row['operation'] == 'train':
+                    operation_time = datetime.strptime(row['dateTime'], DATETIME_FORMAT)
+                    if operation_time > last_train:
+                        train = {
+                            'elapsed': row['time'],
+                            'cpu_seconds': row['CPUSecs'],
+                            'cpu_avg_mem': row['CPUMemAvg'],
+                            'gpu_seconds': row['GPUSecs'],
+                            'gpu_avg_mem': row['GPUMemAvg'],
+                            'accuracy': row['score']
+                        }
+                        last_train = operation_time
+                elif row['operation'] == 'unlearn':
+                    operation_time = datetime.strptime(row['dateTime'], DATETIME_FORMAT)
+                    if operation_time > last_unlearn:
+                        unlearn = {
+                            'elapsed': row['time'],
+                            'cpu_seconds': row['CPUSecs'],
+                            'cpu_avg_mem': row['CPUMemAvg'],
+                            'gpu_seconds': row['GPUSecs'],
+                            'gpu_avg_mem': row['GPUMemAvg'],
+                            'accuracy': row['score']
+                        }
+                        last_unlearn = operation_time
+                elif row['operation'] == 'train_inference':
+                    operation_time = datetime.strptime(row['dateTime'], DATETIME_FORMAT)
+                    if operation_time > last_train_inference:
+                        train_inference = {
+                            'score': row['InferenceScore']
+                        }
+                        last_train_inference = operation_time
+                elif row['operation'] == 'unlearn_inference':
+                    operation_time = datetime.strptime(row['dateTime'], DATETIME_FORMAT)
+                    if operation_time > last_unlearn_inference:
+                        unlearn_inference = {
+                            'score': row['InferenceScore']
+                        }
+                        last_unlearn_inference = operation_time
+    return_dict = {
+        'train': train,
+        'unlearn': unlearn,
+        'train_inference': train_inference,
+        'unlearn_inference': unlearn_inference
+    }
+    return return_dict
 
+
+def ue_display_stats_and_generate_mue(nametag, stats):
+    """
+    Format and display run state stats and calculate their Measurement of Unlearning Effectiveness (MUE) value
+    MUE is generated as the product of:
+        RR - Resource Ratio - between unlearning and training for all 5 resource metrics
+        LR - Loss Ratio - between unlearning and training loss scores.
+        IR - Inference ratio - between unlearning and training membership inference scores
+    Args:
+        nametag (string): tag name for the model
+        stats (DICT): stats information
+    """
+
+    # Display the stats
+    print(f"Training scores: for nametag {nametag}:")
+    print(json.dumps(stats, indent=4))
+    if len(stats['train']) == 0 or len(stats['unlearn']) == 0:
+        print("Not enough stats to generate MUE. Needs both training and unlearning stats to work ")
+        return
+
+    # Generate the MUE
+    train_ratio = stats['unlearn']['elapsed'] / stats['train']['elapsed']
+    cpu_ratio = stats['unlearn']['cpu_seconds'] / stats['train']['cpu_seconds']
+    cpu_mem_ratio = stats['unlearn']['cpu_avg_mem'] / stats['train']['cpu_avg_mem']
+    gpu_ratio = stats['unlearn']['gpu_seconds'] / stats['train']['gpu_seconds']
+    gpu_mem_ratio = stats['unlearn']['gpu_avg_mem'] / stats['train']['gpu_avg_mem']
+    accuracy_ratio = stats['unlearn']['accuracy'] / stats['train']['accuracy']
+
+    if len(stats['train_inference'] == 0) or len(stats['unlearn_inference'] == 0):
+        # Set this to 1 - assume unlearning is successful but mark the score as being incomplete
+        inference_ratio = 1.0
+        inference_flag = " (No Membership Inference data available - result is incomplete)"
+    else:
+        inference_ratio = stats['unlearn_inference']['score'] / stats['train_inference']['score']
+        inference_flag = ""
+
+    MUE_score = train_ratio * cpu_ratio * cpu_mem_ratio * gpu_ratio * gpu_mem_ratio * accuracy_ratio * inference_ratio
+
+    print(f"MUE score for nametag {nametag} is {MUE_score}{inference_flag}")
 
 def ue_extract_token_value(message, token):
     """
@@ -664,7 +768,7 @@ def ue_get_and_store_gpu_stats(nametag, interval, verbose):
         process = Popen(system_command, stdout=PIPE, stderr=PIPE)
         gpu_stats, stderr = process.communicate()
         if len(stderr) != 0:
-            ue_print_piped_message(f"ERROR: {stderr}")
+            ue_print_formatted_bytestring("Error message:", stderr)
         else:
             if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
                 os.mkdir(UE_SCRATCH_STORE_DIRECTORY)
