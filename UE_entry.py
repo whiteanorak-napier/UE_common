@@ -620,6 +620,14 @@ def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mo
                                                  gpu_collector,
                                                  cpu_collector,
                                                  verbose))
+    elif operation == UE_OPERATION_TRAIN_UNLEARN:
+        print("Starting process to train and unlearn the model")
+        run_task = multiprocessing.Process(target=train_and_unlearn,
+                                           args=(nametag,
+                                                 num_removes,
+                                                 gpu_collector,
+                                                 cpu_collector,
+                                                 verbose))
     elif operation == UE_OPERATION_INFERENCE:
         print("Starting process to perform membership inference on the model")
         run_task = multiprocessing.Process(target=membership_inference,
