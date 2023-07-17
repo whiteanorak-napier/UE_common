@@ -22,7 +22,7 @@ Recommended imports for a new code base:
 
 2.1 Mandatory arguments
 
-    parser.add_argument("-ue_sm", '--UE_store_model', default=None, type=str,
+    parser.add_argument("-ue_sm", '--UE_store_model_filename', default=None, type=str,
                         help="UE - Save the learnt model to the named file")
     parser.add_argument("-ue_nt", '--UE_nametag', default=None, type=str,
                         help="UE - Nametag to use for stats")
@@ -59,6 +59,13 @@ Recommended imports for a new code base:
          UE - UE helper class instance
          training_loss_score - loss score after training
 
+    ue_store_model(model, UE_nametag, UE_store_model_filename)
+    Args:
+        model - torch model
+        UE_nametag -tag name used for current run
+        UE_store_model_filename - Filename to use for model storage
+
+
 3.4 Before unlearning:
 
     ue_start_unlearning(UE, number_of_items_to_remove)
@@ -72,6 +79,12 @@ Recommended imports for a new code base:
     Args:
         UE - UE helper class instance
         unlearn_loss_score - loss score after unlearning
+
+    ue_store_model(model, UE_nametag, UE_store_model_filename)
+    Args:
+        model - torch model
+        UE_nametag -tag name used for current run
+        UE_store_model_filename - Filename to use for model storage
 
 3.6 At end of all train/unlearn/inference activity:
 
@@ -119,9 +132,9 @@ UE_VALID_MODES = [
 ]
 
 HOME_DIR = os.path.expanduser('~')
-UE_DATA_STORE_DIRECTORY = HOME_DIR + '/unlearning_effectiveness/data'
-UE_MODEL_STORE_DIRECTORY = HOME_DIR + '/unlearning_effectiveness/models'
 UE_STATS_STORE_DIRECTORY = HOME_DIR + '/unlearning_effectiveness/stats'
+UE_MODEL_STORE_DIRECTORY = HOME_DIR + '/unlearning_effectiveness/models'
+UE_SCRATCH_STORE_DIRECTORY = HOME_DIR + '/unlearning_effectiveness/scratch'
 
 STOREFILE_SUFFIX = "ue_store.csv"
 UE_OPERATION_TRAIN = 'train'
@@ -129,11 +142,13 @@ UE_OPERATION_TRAIN_UNLEARN = 'train_unlearn'
 UE_OPERATION_UNLEARN = 'unlearn'
 UE_OPERATION_INFERENCE = 'inference'
 UE_OPERATION_ALL = "train_unlearn_inference"
+UE_OPERATION_WATERMARK = "watermark"
 UE_VALID_OPERATIONS = [
     UE_OPERATION_TRAIN,
     UE_OPERATION_UNLEARN,
     UE_OPERATION_TRAIN_UNLEARN,
     UE_OPERATION_INFERENCE,
+    UE_OPERATION_WATERMARK,
     UE_OPERATION_ALL
 ]
 
@@ -278,11 +293,16 @@ class UEHelper(object):
         print(f"{UE_KEY_UNLEARN_LOSS_SCORE}={self.unlearn_loss_score}")
 
 
-def ue_print_piped_message(message):
+def ue_print_formatted_bytestring(header, message):
     """
     Writes message to stdout, splitting by linebreaks. Used for passing errors to the UE wrapper.
+    Args:
+        header (string): text to display before output
+        message (bytes): byte string for display
     """
-    lines = str(message).split('/n')
+    print(f"{header}\n")
+    message = message.decode()
+    lines = message.split('\n')
     for line in lines:
         print(line)
 
@@ -301,12 +321,22 @@ def ue_get_files_in_directory(path):
     return [f for f in listdir(path) if isfile(join(path, f))]
 
 
-def ue_store_model(model, filename, train_or_unlearn=UE_TRAIN_MODEL):
+def ue_store_model(model_state, nametag, filename, train_or_unlearn=UE_TRAIN_MODEL):
+    """
+    Store the model to the named file.
+    Modify the filename to include _unlearn if this is an unlearn operation.
+    Args:
+        model_state (DICT): Pytorch model state in JSON format
+        nametag (string): tag name for the scenario
+        filename (string): Full filename including path
+        train_or_unlearn (string): is this a trained or unlearnt model.
+    """
     if filename is not None:
         if train_or_unlearn == UE_UNLEARN_MODEL:
             filename_split = filename.split('.')
             filename = filename_split[0] + '_unlearn' + '.pt'
-        torch.save(model, filename)
+        torch.save(model_state, filename)
+        print(f"Model state tagged as {nametag} saved to {filename}")
 
 
 def ue_load_trained_model(nametag):
@@ -357,10 +387,10 @@ def get_stored_nametags():
     Returns:
         (list): List of nametags
     """
-    if not os.path.exists(UE_DATA_STORE_DIRECTORY):
-        os.makedirs(UE_DATA_STORE_DIRECTORY)
+    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
+        os.makedirs(UE_STATS_STORE_DIRECTORY)
         return []
-    filename_list = [f for f in listdir(UE_DATA_STORE_DIRECTORY) if isfile(join(UE_DATA_STORE_DIRECTORY, f))]
+    filename_list = [f for f in listdir(UE_STATS_STORE_DIRECTORY) if isfile(join(UE_STATS_STORE_DIRECTORY, f))]
     nametag_list = []
     for filename in filename_list:
         nametag = filename.split('_')[0]
@@ -416,9 +446,9 @@ def ue_store_metrics(nametag,
     if operation not in UE_VALID_WRITE_OPERATIONS:
         print(f"store_metrics: invalid operation {operation}, must be one of {UE_VALID_WRITE_OPERATIONS}")
         return
-    if not os.path.exists(UE_DATA_STORE_DIRECTORY):
-        os.makedirs(UE_DATA_STORE_DIRECTORY)
-    store_file = f"{UE_DATA_STORE_DIRECTORY}/{nametag}_{STOREFILE_SUFFIX}"
+    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
+        os.makedirs(UE_STATS_STORE_DIRECTORY)
+    store_file = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_{STOREFILE_SUFFIX}"
     timestamp = datetime.strftime(datetime.utcnow(), DATETIME_FORMAT)
     store_csv_data = f"{nametag}," \
                      f"{timestamp}," \
@@ -495,7 +525,7 @@ def ue_display_stats(nametag, requested_operation, display_nametags):
         return
 
     if len(stored_nametag_list) == 0:
-        print(f"\nNo nametag data exists in {UE_DATA_STORE_DIRECTORY}")
+        print(f"\nNo nametag data exists in {UE_STATS_STORE_DIRECTORY}")
         return
     if nametag not in stored_nametag_list:
         print(f"\nNo metrics exist for nametag {nametag}")
@@ -503,7 +533,7 @@ def ue_display_stats(nametag, requested_operation, display_nametags):
         output = ""
         filename_nametag = filename.split('_')[0]
         if filename_nametag == nametag:
-            full_filename = f"{UE_DATA_STORE_DIRECTORY}/{filename}"
+            full_filename = f"{UE_STATS_STORE_DIRECTORY}/{filename}"
             with open(full_filename, mode='r') as csv_file:
                 csv_reader = csv.DictReader(csv_file)
                 count = 0
@@ -550,9 +580,9 @@ def ue_set_stats_mode_train(nametag, verbose=False):
         nametag (string): tag name for the model
         verbose (bool): verbose mode.
     """
-    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
-        os.mkdir(UE_STATS_STORE_DIRECTORY)
-    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{nametag}-mode.dat"
+    if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
+        os.mkdir(UE_SCRATCH_STORE_DIRECTORY)
+    UE_STATS_MODE_FILE = UE_SCRATCH_STORE_DIRECTORY + f"/{nametag}-mode.dat"
     with open(UE_STATS_MODE_FILE, 'w') as mode_file:
         mode_file.write(UE_TRAIN_MODEL)
     if verbose:
@@ -565,9 +595,9 @@ def ue_set_stats_mode_unlearn(nametag, verbose=False):
         nametag (string): tag name for the model
         verbose (bool): verbose mode.
     """
-    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
-        os.mkdir(UE_STATS_STORE_DIRECTORY)
-    UE_STATS_MODE_FILE = UE_STATS_STORE_DIRECTORY + f"/{nametag}-mode.dat"
+    if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
+        os.mkdir(UE_SCRATCH_STORE_DIRECTORY)
+    UE_STATS_MODE_FILE = UE_SCRATCH_STORE_DIRECTORY + f"/{nametag}-mode.dat"
     with open(UE_STATS_MODE_FILE, 'w') as mode_file:
         mode_file.write(UE_UNLEARN_MODEL)
     if verbose:
@@ -586,10 +616,10 @@ def ue_get_stats_mode(nametag, verbose=False):
     """
     # Assuming training
     mode = UE_TRAIN_MODEL
-    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
+    if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
         ue_set_stats_mode_train(nametag)
     else:
-        ue_stats_mode_file = UE_STATS_STORE_DIRECTORY + f"/{nametag}-mode.dat"
+        ue_stats_mode_file = UE_SCRATCH_STORE_DIRECTORY + f"/{nametag}-mode.dat"
         if not os.path.exists(ue_stats_mode_file):
             ue_set_stats_mode_train(nametag)
         else:
@@ -623,9 +653,9 @@ def ue_get_and_store_gpu_stats(nametag, interval, verbose):
              'timestamp,' \
              'processor%,' \
              'memoryMiB\n'
-    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
-        os.makedirs(UE_STATS_STORE_DIRECTORY)
-    filename = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_gpu.csv"
+    if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
+        os.makedirs(UE_SCRATCH_STORE_DIRECTORY)
+    filename = f"{UE_SCRATCH_STORE_DIRECTORY}/{nametag}_gpu.csv"
     with open(filename, 'w') as stats:
         stats.write(header)
     if verbose:
@@ -636,10 +666,10 @@ def ue_get_and_store_gpu_stats(nametag, interval, verbose):
         if len(stderr) != 0:
             ue_print_piped_message(f"ERROR: {stderr}")
         else:
-            if not os.path.exists(UE_STATS_STORE_DIRECTORY):
-                os.mkdir(UE_STATS_STORE_DIRECTORY)
+            if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
+                os.mkdir(UE_SCRATCH_STORE_DIRECTORY)
             mode = ue_get_stats_mode(nametag, verbose)
-            filename = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_gpu.csv"
+            filename = f"{UE_SCRATCH_STORE_DIRECTORY}/{nametag}_gpu.csv"
             output_line = f"{mode},{gpu_stats.decode('utf-8').replace(', ', ',').replace(' %', '').replace(' MiB', '')}"
             with open(filename, 'a') as stats:
                 stats.write(output_line)
@@ -660,9 +690,9 @@ def ue_get_and_store_system_stats(nametag, interval, verbose):
              'timestamp,' \
              'processor%,' \
              'memoryMiB\n'
-    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
-        os.makedirs(UE_STATS_STORE_DIRECTORY)
-    filename = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_cpu.csv"
+    if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
+        os.makedirs(UE_SCRATCH_STORE_DIRECTORY)
+    filename = f"{UE_SCRATCH_STORE_DIRECTORY}/{nametag}_cpu.csv"
     with open(filename, 'w') as stats:
         stats.write(header)
     if verbose:
@@ -672,10 +702,10 @@ def ue_get_and_store_system_stats(nametag, interval, verbose):
         cpu_pct = psutil.cpu_percent()
         memory = psutil.virtual_memory()
         memory_percent = memory[2]
-        if not os.path.exists(UE_STATS_STORE_DIRECTORY):
-            os.mkdir(UE_STATS_STORE_DIRECTORY)
+        if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
+            os.mkdir(UE_SCRATCH_STORE_DIRECTORY)
         mode = ue_get_stats_mode(nametag, verbose)
-        filename = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_cpu.csv"
+        filename = f"{UE_SCRATCH_STORE_DIRECTORY}/{nametag}_cpu.csv"
         output_line = f"{mode},{timestamp},{cpu_pct},{memory_percent}\n"
         with open(filename, 'a') as stats:
             stats.write(output_line)
@@ -696,12 +726,12 @@ def ue_get_gpu_cpu_stats(nametag, stats_type, operation, verbose):
        Average memory usage (MB)
        Peak memory usage (MB)
     """
-    if not os.path.exists(UE_STATS_STORE_DIRECTORY):
-        os.makedirs(UE_STATS_STORE_DIRECTORY)
+    if not os.path.exists(UE_SCRATCH_STORE_DIRECTORY):
+        os.makedirs(UE_SCRATCH_STORE_DIRECTORY)
     if stats_type == UE_CPU_STATS:
-        filename = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_cpu.csv"
+        filename = f"{UE_SCRATCH_STORE_DIRECTORY}/{nametag}_cpu.csv"
     elif stats_type == UE_GPU_STATS:
-        filename = f"{UE_STATS_STORE_DIRECTORY}/{nametag}_gpu.csv"
+        filename = f"{UE_SCRATCH_STORE_DIRECTORY}/{nametag}_gpu.csv"
     else:
         print(f"Unknown stats type {stats_type}")
         sys.exit(1)
@@ -829,3 +859,24 @@ def ue_print_run_stats(UE):
     """
     UE.print_ue_training_values()
     UE.print_ue_unlearn_values()
+
+
+def ue_save_watermark_dataset(dataset, nametag):
+    """
+    Saves a pytorch dataset to a named file.
+    Mainly used for storing watermarked training data
+    Note that a new directory is created in the model store area for each set of saved data
+    Args:
+        dataset (): Pytorch data set
+        nametag (string): tag name for the watermark data
+    Returns:
+        -
+    """
+    datastore = f"{UE_MODEL_STORE_DIRECTORY}/{nametag}"
+    if not os.path.exists(datastore):
+        os.makedirs(datastore)
+        for i, data in enumerate(dataset):
+            torch.save(data[0], f"{datastore}/train_transformed_img{i}")
+            torch.save(data[1], f"{datastore}/train_transformed_mask{i}")
+    else:
+        print(f"Data already stored. Please delete watermarked files in {datastore} to update")

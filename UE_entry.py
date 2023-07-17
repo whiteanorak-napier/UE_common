@@ -15,8 +15,6 @@ import sys
 import os
 import multiprocessing
 from subprocess import Popen, PIPE
-import torch
-import torchvision
 from torchvision.datasets import MNIST, CIFAR10
 
 from UE_interface import (
@@ -39,6 +37,7 @@ from UE_interface import (
     UE_TRAIN_MODEL,
     UE_UNLEARN_MODEL,
     UE_OPERATION_TRAIN_UNLEARN,
+    UE_OPERATION_WATERMARK,
 
     UE_OPERATION_TRAIN,
     UE_OPERATION_UNLEARN,
@@ -52,7 +51,7 @@ from UE_interface import (
     ue_set_stats_mode_train,
     ue_get_and_store_gpu_stats,
     ue_get_and_store_system_stats,
-    ue_print_piped_message,
+    ue_print_formatted_bytestring,
     ue_store_metrics,
 )
 
@@ -68,6 +67,7 @@ EXECUTION_TRAIN = 'train'
 EXECUTION_UNLEARN = 'unlearn'
 EXECUTION_TRAIN_UNLEARN = 'train_unlearn'
 EXECUTION_INFERENCE = 'inference'
+EXECUTION_WATERMARK = 'watermark'
 RUN_SCRIPT = 'executable'
 RUN_ARGS = 'args'
 
@@ -80,22 +80,24 @@ TRAIN_UNLEARN_SCRIPT  - name of script to train and unlearn
                         in a single operation
 INFERENCE_SCRIPT      - name of script used for membership
                         inference tests
+WATERMARK_SCRIPT      - name of script used to train a 
+                        watermarked data set.
 #############################################################
 """
-TRAIN_SCRIPT = f"train_gnn.py"
-UNLEARN_SCRIPT = f"delete_gnn.py"
+TRAIN_SCRIPT = f""
+UNLEARN_SCRIPT = f""
 TRAIN_UNLEARN_SCRIPT = f""
 INFERENCE_SCRIPT = f""
+WATERMARK_SCRIPT = f"UE_train_watermarked.py"
 
 EXECUTION_COMMANDS = {
     EXECUTION_TRAIN: {
         RUN_SCRIPT: TRAIN_SCRIPT,
-        RUN_ARGS: ["--epochs", "1"]
+        RUN_ARGS: []
     },
     EXECUTION_UNLEARN: {
         RUN_SCRIPT: UNLEARN_SCRIPT,
-        RUN_ARGS: ["--df_size", "100",
-                   "--df", "in"]
+        RUN_ARGS: []
     },
     EXECUTION_TRAIN_UNLEARN: {
         RUN_SCRIPT: TRAIN_UNLEARN_SCRIPT,
@@ -104,6 +106,11 @@ EXECUTION_COMMANDS = {
     EXECUTION_INFERENCE: {
         RUN_SCRIPT: INFERENCE_SCRIPT,
         RUN_ARGS: []
+    },
+    EXECUTION_WATERMARK: {
+        RUN_SCRIPT: WATERMARK_SCRIPT,
+        RUN_ARGS: ["--gpu-id", "0",
+                   "--checkpoint", "checkpoint/watermark"]
     }
 }
 ##############################################################
@@ -112,10 +119,6 @@ EXECUTION_COMMANDS = {
 # arguments required by the target code.
 ##############################################################
 
-def display_errors(errors):
-    for line in errors.split("\n"):
-        print(f"ERROR: {line}")
-
 
 def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
     """
@@ -123,7 +126,7 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
     Creates a processes to train a model and when complete, terminates the parallel CPU and GPU collector
     processes and stores the resulting stats in UE storage.
     Can request that the resultant model is stored in UE storage if the 3rd party code has
-    the --UE_store_model option configured.
+    the --UE_store_model_filename option configured.
     Args:
         nametag (string): tag name for the model
         epochs (int): Number of epochs to run
@@ -150,7 +153,7 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
         ["python3",
          f"{executable_filename}"] + \
         executable_params +  \
-        ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
+        ["--UE_store_model_filename", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
          "--UE_nametag", f"{nametag}",
          "--epochs", f"{epochs}"]
 
@@ -164,11 +167,11 @@ def train_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
     gpu_collector.terminate()
     cpu_collector.terminate()
     if len(stderr) != 0:
-        ue_print_piped_message(stderr)
+        ue_print_formatted_bytestring("Error Message:", stderr)
     try:
         string_stdout = str(stdout)
         if verbose:
-            print(stdout)
+            ue_print_formatted_bytestring("Command output:", stderr)
             # Extract stats from stdout.
         cuda_status = ue_extract_token_value(string_stdout, UE_KEY_CUDA)
         dataset = ue_extract_token_value(string_stdout, UE_KEY_DATASET)
@@ -213,7 +216,7 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
     Creates a processes to unlearn data from a model and when complete, terminates the
     parallel CPU and GPU collector processes and stores the resulting stats in UE storage.
     Can request that the resultant model is stored in UE storage if the 3rd party code has
-    the --UE_store_model option configured.
+    the --UE_store_model_filename option configured.
     Args:
         nametag (string): tag name for the model
         num_removes (int): Number of items to remove
@@ -240,7 +243,7 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
         ["python3",
          f"{executable_filename}"] + \
         executable_params + \
-        ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
+        ["--UE_store_model_filename", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
          "--UE_nametag", f"{nametag}"]
 
     if verbose:
@@ -253,11 +256,11 @@ def unlearn_model(nametag, num_removes, gpu_collector, cpu_collector, verbose):
     gpu_collector.terminate()
     cpu_collector.terminate()
     if len(stderr) != 0:
-        ue_print_piped_message(stderr)
+        ue_print_formatted_bytestring("Error Message:", stderr)
     try:
         string_stdout = str(stdout)
         if verbose:
-            print(stdout)
+            ue_print_formatted_bytestring("Command output:", stderr)
             # Extract stats from stdout.
         cuda_status = ue_extract_token_value(string_stdout, UE_KEY_CUDA)
         dataset = ue_extract_token_value(string_stdout, UE_KEY_DATASET)
@@ -307,7 +310,7 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
     Creates a processes to train/unlearn, and when complete, terminates the parallel CPU and GPU collector
     processes and stores the resulting stats in UE storage.
     Can request that the resultant model is stored in UE storage if the 3rd party code has
-    the --UE_store_model option configured.
+    the --UE_store_model_filename option configured.
     Args:
         nametag (string): tag name for the model
         num_removes (int): Number of elements to remove in unlearning
@@ -335,7 +338,7 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
         ["python3",
          f"{executable_filename}"] + \
         executable_params + \
-        ["--UE_store_model", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
+        ["--UE_store_model_filename", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
          "--UE_nametag", f"{nametag}",
          "--num_clusters", f"{num_removes}"]
 
@@ -349,11 +352,11 @@ def train_and_unlearn(nametag, num_removes, removal_mode, gpu_collector, cpu_col
     gpu_collector.terminate()
     cpu_collector.terminate()
     if len(stderr) != 0:
-        ue_print_piped_message(stderr)
+        ue_print_formatted_bytestring("Error Message:", stderr)
     try:
         string_stdout = str(stdout)
         if verbose:
-            print(stdout)
+            ue_print_formatted_bytestring("Command output:", stderr)
             # Extract stats from stdout.
         cuda_status = ue_extract_token_value(string_stdout, UE_KEY_CUDA)
         dataset = ue_extract_token_value(string_stdout, UE_KEY_DATASET)
@@ -421,11 +424,11 @@ def membership_inference(nametag, unlearned_data, verbose):
     process = Popen(system_command, stdout=PIPE, stderr=PIPE)
     stdout, stderr = process.communicate()
     if len(stderr) != 0:
-        ue_print_piped_message(stderr)
+        ue_print_formatted_bytestring("Error Message:", stderr)
     try:
         string_stdout = str(stdout)
         if verbose:
-            print(stdout)
+            ue_print_formatted_bytestring("Command output:", stderr)
             # Extract stats from stdout.
         inference_score = ue_extract_token_value(string_stdout, UE_KEY_INFERENCE)
         if verbose:
@@ -468,13 +471,102 @@ def membership_inference(nametag, unlearned_data, verbose):
                      inference_score
                      )
 
+def train_watermarked_model(nametag, epochs, gpu_collector, cpu_collector, verbose):
+    """
+    Calls 3rd party code.
+    Creates a processes to train a watermarked model and when complete, terminates the
+    parallel CPU and GPU collector processes and stores the resulting stats in UE storage.
+    Requests that the resultant model and watermarked data is stored in UE storage.
+    Args:
+        nametag (string): tag name for the model
+        epochs (int): Number of epochs to run
+        gpu_collector (thread): To be terminated at end of run
+        cpu_collector (thread): To be terminated at end of run
+        verbose (bool): Verbose trace
+    :returns:
+        -
+    """
+    # Note that Popen requires each argument to be passed as a separate string in a list.
+    if not os.path.exists(UE_MODEL_STORE_DIRECTORY):
+        os.makedirs(UE_MODEL_STORE_DIRECTORY)
+    existing_models = ue_get_files_in_directory(UE_MODEL_STORE_DIRECTORY)
+    requested_model = f"{nametag}.pt"
+    watermarked_data = f"{nametag}_watermarked.data"
+    if requested_model not in existing_models:
+        print(f"Model {requested_model} will be created in {UE_MODEL_STORE_DIRECTORY}")
+    else:
+        print(f"Model {requested_model} already exists in {UE_MODEL_STORE_DIRECTORY} and will be overwritten")
+    executable_filename = EXECUTION_COMMANDS[UE_OPERATION_WATERMARK][RUN_SCRIPT]
+    executable_params = EXECUTION_COMMANDS[UE_OPERATION_WATERMARK][RUN_ARGS]
+    system_command = \
+        ["python3",
+         f"{executable_filename}"] + \
+        executable_params +  \
+        ["--UE_store_model_filename", f"{UE_MODEL_STORE_DIRECTORY}/{requested_model}",
+         "--UE_store_watermarked_data", f"{watermarked_data}",
+         "--UE_nametag", f"{nametag}",
+         f"--epochs", f"{epochs}"
+         ]
+
+    if verbose:
+        print(f"Calling 3rd party training executable using '{system_command}'")
+    process = Popen(system_command, stdout=PIPE, stderr=PIPE)
+
+    # Block and wait for the process to complete
+    stdout, stderr = process.communicate()
+    print("Stopping GPU & CPU collectors")
+    gpu_collector.terminate()
+    cpu_collector.terminate()
+    if len(stderr) != 0:
+        ue_print_formatted_bytestring("Error message:", stderr)
+    try:
+        string_stdout = str(stdout)
+        if verbose:
+            ue_print_formatted_bytestring("Command output:", stderr)
+            # Extract stats from stdout.
+        cuda_status = ue_extract_token_value(string_stdout, UE_KEY_CUDA)
+        dataset = ue_extract_token_value(string_stdout, UE_KEY_DATASET)
+        training_size = ue_extract_token_value(string_stdout, UE_KEY_TRAINING_DATA_SIZE)
+        test_size = ue_extract_token_value(string_stdout, UE_KEY_TEST_DATA_SIZE)
+        training_time = ue_extract_token_value(string_stdout, UE_KEY_TRAINING_TIME)
+        training_score = ue_extract_token_value(string_stdout, UE_KEY_TRAINING_LOSS_SCORE)
+        if verbose:
+            print(f"Training Time = {training_time}, Training Score = {training_score}")
+    except Exception as e:
+        print(f"Unable to gather stats from code execution, error '{e}'")
+        exit(1)
+    num_removes = 0
+    inference_score = 0
+    cpu_cumulative_seconds, cpu_average_memory_MiB, cpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_CPU_STATS, UE_TRAIN_MODEL, verbose)
+    gpu_cumulative_seconds, gpu_average_memory_MiB, gpu_peak_memory_MiB = \
+        ue_get_gpu_cpu_stats(nametag, UE_GPU_STATS, UE_TRAIN_MODEL, verbose)
+    ue_store_metrics(nametag,
+                     UE_TRAIN_MODEL,
+                     cuda_status,
+                     dataset,
+                     epochs,
+                     training_size,
+                     test_size,
+                     num_removes,
+                     training_score,
+                     training_time,
+                     cpu_cumulative_seconds,
+                     cpu_average_memory_MiB,
+                     cpu_peak_memory_MiB,
+                     gpu_cumulative_seconds,
+                     gpu_average_memory_MiB,
+                     gpu_peak_memory_MiB,
+                     inference_score
+                     )
+
 
 
 def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mode, verbose):
     """
-    Perform the operation (training, unlearing or membership inference) using the configured
-    external script as an entry point, storing temporary and results data in files named for the nametag.
-    "Epochs" is used for learning, "num_removes" for unlearning.
+    Perform the operation (training, unlearing, membership inference or watermark generation)
+    using the configured external script as an entry point, storing temporary and results
+    data in files named for the nametag. "Epochs" is used for learning, "num_removes" for unlearning.
     The operation is kicked off in parallel with two additional processes, one to gather GPU and
     GPU memory stats, and one to gather CPU and mCPU emory stats.
     Args:
@@ -521,6 +613,14 @@ def process_and_gather_stats(operation, nametag, epochs, num_removes, removal_mo
                                            args=(nametag,
                                                  num_removes,
                                                  removal_mode,
+                                                 gpu_collector,
+                                                 cpu_collector,
+                                                 verbose))
+    elif operation == UE_OPERATION_WATERMARK:
+        print("Starting process to perform membership inference on the model")
+        run_task = multiprocessing.Process(target=train_watermarked_model,
+                                           args=(nametag,
+                                                 epochs,
                                                  gpu_collector,
                                                  cpu_collector,
                                                  verbose))
