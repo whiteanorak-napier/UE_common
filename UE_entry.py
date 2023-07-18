@@ -41,7 +41,7 @@ from UE_interface import (
     UE_OPERATION_TRAIN_UNLEARN,
     UE_OPERATION_WATERMARK,
     UE_OPERATION_DISPLAY_TAGS,
-    UE_OPERATION_DISPLAY_STATS,
+    UE_OPERATION_GENERATE_MUE,
     UE_VALID_OPERATIONS,
 
     ue_get_stored_nametags,
@@ -686,7 +686,7 @@ def main():
         print(f"A nametag must be supplied for a {operation} operation")
         sys.exit(1)
 
-    if operation == UE_OPERATION_DISPLAY_STATS:
+    if operation == UE_OPERATION_GENERATE_MUE:
         stats = ue_get_effectiveness_stats(nametag)
         ue_display_stats_and_generate_mue(nametag, stats)
         sys.exit(0)
@@ -707,7 +707,7 @@ def check_args(args=None):
 
     parser.add_argument(
         '-o', '--operation',
-        help='Operation to perform. Must be one of train, unlearn, inference, display_tags or display_stats',
+        help='Operation to perform. Must be one of train, unlearn, inference, display_tags or mue to generate MUE',
         required=False,
         default=UE_OPERATION_TRAIN,
     )
