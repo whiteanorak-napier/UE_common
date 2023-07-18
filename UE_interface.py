@@ -638,7 +638,7 @@ def ue_display_stats_and_generate_mue(nametag, stats):
     """
     Format and display run state stats and calculate their Measurement of Unlearning Effectiveness (MUE) value
     MUE is generated as the product of:
-        RR - Resource Ratio - between unlearning and training for all 5 resource metrics
+        RR - Resource Ratio - between training and unlearning for all 5 resource metrics
         LR - Loss Ratio - between unlearning and training loss scores.
         IR - Inference ratio - between unlearning and training membership inference scores
     Args:
@@ -655,17 +655,21 @@ def ue_display_stats_and_generate_mue(nametag, stats):
 
 
     # Generate the MUE
+    # Resource Ratio (RR) calculation (training over unlearning)
     unlearn_time = zero_pad_timedelta(stats['unlearn']['elapsed'])
     train_time = zero_pad_timedelta(stats['train']['elapsed'])
     unlearn_seconds = datetime.strptime(unlearn_time, TIMEDELTA_FORMAT).timestamp()
     train_seconds = datetime.strptime(train_time, TIMEDELTA_FORMAT).timestamp()
-    train_ratio = unlearn_seconds / train_seconds
-    cpu_ratio = get_ratio(stats['unlearn']['cpu_seconds'], stats['train']['cpu_seconds'])
-    cpu_mem_ratio = get_ratio(stats['unlearn']['cpu_avg_mem'], stats['train']['cpu_avg_mem'])
-    gpu_ratio = get_ratio(stats['unlearn']['gpu_seconds'], stats['train']['gpu_seconds'])
-    gpu_mem_ratio = get_ratio(stats['unlearn']['gpu_avg_mem'], stats['train']['gpu_avg_mem'])
-    accuracy_ratio = get_ratio(stats['unlearn']['accuracy'], stats['train']['accuracy'])
+    train_ratio = train_seconds / unlearn_seconds
+    cpu_ratio = get_ratio(stats['train']['cpu_seconds'], stats['unlearn']['cpu_seconds'])
+    cpu_mem_ratio = get_ratio(stats['train']['cpu_avg_mem'], stats['unlearn']['cpu_avg_mem'])
+    gpu_ratio = get_ratio(stats['train']['gpu_seconds'], stats['unlearn']['gpu_seconds'])
+    gpu_mem_ratio = get_ratio(stats['train']['gpu_avg_mem'], stats['unlearn']['gpu_avg_mem'])
 
+    # Loss ratio (LR) calculation (unlearning over training)
+    accuracy_ratio = get_ratio(stats['train']['accuracy'], stats['unlearn']['accuracy'])
+
+    # Inference Ratio (IR) calculation (unlearning over training)
     if len(stats['train_inference']) == 0 or len(stats['unlearn_inference']) == 0:
         # Set this to 1 - assume unlearning is successful but mark the score as being incomplete
         inference_ratio = 1.0
