@@ -174,6 +174,7 @@ UE_CPU_STATS = 'cpu'
 
 DATETIME_FORMAT = "%Y-%m-%d_%H:%M:%S"
 UNIX_EPOCH = datetime.strptime('1970-01-01_00:00:00', DATETIME_FORMAT)
+TIMEDELTA_FORMAT = '%H:%M:%S.%f'
 
 
 class UEHelper(object):
@@ -326,6 +327,32 @@ def ue_get_files_in_directory(path):
     if not os.path.exists(UE_MODEL_STORE_DIRECTORY):
         os.makedirs(UE_MODEL_STORE_DIRECTORY)
     return [f for f in listdir(path) if isfile(join(path, f))]
+
+
+def get_ratio(top, bottom):
+    """
+    Get the ratio of top to bottom with divide by zero protection
+    Args:
+        top (string): numerator
+        bottom (string): denominator
+    Returns:
+        (float): ratio of top to bottom
+    """
+    return 1 if float(bottom) == 0.0 else float(top) / float(bottom)
+
+
+def zero_pad_timedelta(timedelta_string):
+    """
+    Zero-pad a timedelta hours field (if required)
+    Args:
+        timedelta_string (string): timedelta in string format
+    Returns:
+        (string) zero padded string
+    """
+    if timedelta_string.startswith('0:'):
+        return f"0{timedelta_string}"
+    else:
+        return timedelta_string
 
 
 def ue_store_model(model_state, nametag, filename, train_or_unlearn=UE_TRAIN_MODEL):
@@ -626,15 +653,20 @@ def ue_display_stats_and_generate_mue(nametag, stats):
         print("Not enough stats to generate MUE. Needs both training and unlearning stats to work ")
         return
 
-    # Generate the MUE
-    train_ratio = stats['unlearn']['elapsed'] / stats['train']['elapsed']
-    cpu_ratio = stats['unlearn']['cpu_seconds'] / stats['train']['cpu_seconds']
-    cpu_mem_ratio = stats['unlearn']['cpu_avg_mem'] / stats['train']['cpu_avg_mem']
-    gpu_ratio = stats['unlearn']['gpu_seconds'] / stats['train']['gpu_seconds']
-    gpu_mem_ratio = stats['unlearn']['gpu_avg_mem'] / stats['train']['gpu_avg_mem']
-    accuracy_ratio = stats['unlearn']['accuracy'] / stats['train']['accuracy']
 
-    if len(stats['train_inference'] == 0) or len(stats['unlearn_inference'] == 0):
+    # Generate the MUE
+    unlearn_time = zero_pad_timedelta(stats['unlearn']['elapsed'])
+    train_time = zero_pad_timedelta(stats['train']['elapsed'])
+    unlearn_seconds = datetime.strptime(unlearn_time, TIMEDELTA_FORMAT).timestamp()
+    train_seconds = datetime.strptime(train_time, TIMEDELTA_FORMAT).timestamp()
+    train_ratio = unlearn_seconds / train_seconds
+    cpu_ratio = get_ratio(stats['unlearn']['cpu_seconds'], stats['train']['cpu_seconds'])
+    cpu_mem_ratio = get_ratio(stats['unlearn']['cpu_avg_mem'], stats['train']['cpu_avg_mem'])
+    gpu_ratio = get_ratio(stats['unlearn']['gpu_seconds'], stats['train']['gpu_seconds'])
+    gpu_mem_ratio = get_ratio(stats['unlearn']['gpu_avg_mem'], stats['train']['gpu_avg_mem'])
+    accuracy_ratio = get_ratio(stats['unlearn']['accuracy'], stats['train']['accuracy'])
+
+    if len(stats['train_inference']) == 0 or len(stats['unlearn_inference']) == 0:
         # Set this to 1 - assume unlearning is successful but mark the score as being incomplete
         inference_ratio = 1.0
         inference_flag = " (No Membership Inference data available - result is incomplete)"
