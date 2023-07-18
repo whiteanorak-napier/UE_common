@@ -9,13 +9,13 @@ Recommended imports for a new code base:
 
 1. Imports:
 
-    from UE_interface import (
-        ue_setup,
-        ue_start_training,
-        ue_stop_training,
-        ue_start_unlearning,
-        ue_stop_unlearning,
-        ue_print_run_stats
+from UE_interface import (
+    ue_setup,
+    ue_start_training,
+    ue_stop_training,
+    ue_start_unlearning,
+    ue_stop_unlearning,
+    ue_print_run_stats
 )
 
 2. Additional arguments:
