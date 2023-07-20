@@ -669,18 +669,25 @@ def ue_display_stats_and_generate_mue(nametag, stats):
     # Loss ratio (LR) calculation (unlearning over training)
     accuracy_ratio = get_ratio(stats['train']['accuracy'], stats['unlearn']['accuracy'])
 
+    # Set the accuracy ratio to 1 if the value is zero to avoid returning a zero score
+    if accuracy_ratio == 0.0:
+        accuracy_ratio = 1.0
+        accuracy_flag = "\n    - Loss score ratio was zero, Resource Ratio does not take loss score into account"
+    else:
+        accuracy_flag = ""
+
     # Inference Ratio (IR) calculation (unlearning over training)
     if len(stats['train_inference']) == 0 or len(stats['unlearn_inference']) == 0:
         # Set this to 1 - assume unlearning is successful but mark the score as being incomplete
         inference_ratio = 1.0
-        inference_flag = " (No Membership Inference data available - result is incomplete)"
+        inference_flag = "\n    - No Membership Inference data available - Inference Ratio not used"
     else:
         inference_ratio = stats['unlearn_inference']['score'] / stats['train_inference']['score']
         inference_flag = ""
 
     MUE_score = train_ratio * cpu_ratio * cpu_mem_ratio * gpu_ratio * gpu_mem_ratio * accuracy_ratio * inference_ratio
 
-    print(f"MUE score for nametag {nametag} is {MUE_score}{inference_flag}")
+    print(f"MUE score for nametag {nametag} is {MUE_score}{inference_flag}{accuracy_flag}")
 
 def ue_extract_token_value(message, token):
     """
